@@ -54,7 +54,13 @@ export const SLOT_SYSTEM_PROMPT = `你是表单助手，服务对象是不识字
  */
 export const PLAN_SYSTEM_PROMPT = `你是政务办事路径规划师。用户要办的事不在已收录清单里，你要现场规划一条可在当前手机应用里走通的路径。
 
-【绝对约束】
+【第一步：先判断相关性】
+原话必须是在说一件「用户想办的、属于政务/生活服务的事」。
+闲聊、问候、脏话、问天气、问知识点、无意义字符，一律不算。
+不算时只输出 {"plausible":false}，不要输出 title/steps 等任何其他字段。
+拿不准时也算不算——宁可拒排，不可把无关的话硬安到一个事项上。
+
+【是办事请求时，遵守以下约束】
 1. screenId 与 targetControlId 只能从下面给出的屏幕表里原样复制，不许拼写、不许臆造。
 2. 每一步只点一个控件；点完必须能到达下一步所在屏幕。
 3. 最多 5 步；到不了终点就停在最后一个你能确定的屏幕，并令 coverage 为 "partial"。
@@ -67,8 +73,8 @@ export const PLAN_SYSTEM_PROMPT = `你是政务办事路径规划师。用户要
 8. 不要描述颜色、图标样式这类屏幕表里没有的信息。说「点写着『民政服务』的那个」，
    不要说「点绿色的民政服务」——老人会照着颜色去找，找不到就不敢点了。
 
-只输出 JSON，不要 Markdown：
-{"title":"事项全称","category":"所属类别","documents":["需要带的材料"],"coverage":"full或partial","steps":[{"screenId":"","targetControlId":"","action":"tap或input或read","goal":"这步的目的","instruction":"给老人看的一句话","speak":"20字内口语","guardrail":null}],"reason":"为什么这么排"}`;
+只输出 JSON，不要 Markdown。先判相关性；不相关时：{"plausible":false}
+相关时：{"plausible":true,"title":"事项全称","category":"所属类别","documents":["需要带的材料"],"coverage":"full或partial","steps":[{"screenId":"","targetControlId":"","action":"tap或input或read","goal":"这步的目的","instruction":"给老人看的一句话","speak":"20字内口语","guardrail":null}],"reason":"为什么这么排"}`;
 
 /**
  * 把屏幕库压成紧凑白名单，供规划提示词使用。
@@ -133,39 +139,51 @@ export const SlotOutputSchema = z.object({
  * 规划输出校验。
  * 这里只管「字段形状对不对」，不管「屏幕和控件真不真」——后者是 plan.ts 的事。
  * 分开的理由：形状错误是模型抽风，契约错误是模型幻觉，两者的处置与埋点不该混在一起。
+ *
+ * 形状是判别联合：`plausible:false` 时只允许这一个字段（判定不相关就不该再排步骤），
+ * `plausible:true`（含缺省）时才是完整计划。
  */
-export const PlanOutputSchema = z.object({
-  title: z.string().min(2).max(40),
-  category: z.string().max(20).optional(),
-  documents: z.array(z.string().min(1).max(30)).max(6).optional(),
-  coverage: z.enum(['full', 'partial']).default('partial'),
-  steps: z
-    .array(
-      z.object({
-        screenId: z.string().min(1).max(40),
-        targetControlId: z.string().max(60).optional(),
-        action: z.enum(['tap', 'input', 'read']).default('tap'),
-        goal: z.string().min(1).max(60),
-        instruction: z.string().min(2).max(80),
-        speak: z.string().max(60).optional(),
-        guardrail: z.enum(GUARDRAIL_KINDS).nullish().catch(null),
-      }),
-    )
-    .min(1)
-    .max(10),
-  reason: z.string().max(200).optional(),
+const PlanStepSchema = z.object({
+  screenId: z.string().min(1).max(40),
+  targetControlId: z.string().max(60).optional(),
+  action: z.enum(['tap', 'input', 'read']).default('tap'),
+  goal: z.string().min(1).max(60),
+  instruction: z.string().min(2).max(80),
+  speak: z.string().max(60).optional(),
+  guardrail: z.enum(GUARDRAIL_KINDS).nullish().catch(null),
 });
+
+export const PlanOutputSchema = z
+  .object({
+    /** 相关性前置判断：原话不是办事请求时为 false。缺省视为 true（兼容不回该字段的模型） */
+    plausible: z.boolean().default(true),
+    title: z.string().min(2).max(40).optional(),
+    category: z.string().max(20).optional(),
+    documents: z.array(z.string().min(1).max(30)).max(6).optional(),
+    coverage: z.enum(['full', 'partial']).default('partial'),
+    steps: z.array(PlanStepSchema).max(10).optional(),
+    reason: z.string().max(200).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.plausible) {
+      if (!data.title) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['title'], message: '缺少事项名称' });
+      if (!data.steps?.length) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['steps'], message: '缺少步骤' });
+    } else if (data.steps?.length) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['steps'], message: '判定不相关时不应再给出步骤' });
+    }
+  });
 
 export type PlanOutput = z.infer<typeof PlanOutputSchema>;
 
-/** zod 通过后的形状与 PlanDraft 对齐，供领域层校验器消费 */
+/** zod 通过后的形状与 PlanDraft 对齐，供领域层校验器消费。
+ * 前置的 superRefine 已保证 plausible 时 title/steps 必在，这里只做形状对齐。 */
 export function toPlanDraft(parsed: PlanOutput): PlanDraft {
   return {
-    title: parsed.title,
+    title: parsed.title ?? '',
     ...(parsed.category ? { category: parsed.category } : {}),
     ...(parsed.documents ? { documents: parsed.documents } : {}),
     coverage: parsed.coverage,
-    steps: parsed.steps.map((step) => ({
+    steps: (parsed.steps ?? []).map((step) => ({
       screenId: step.screenId,
       ...(step.targetControlId ? { targetControlId: step.targetControlId } : {}),
       action: step.action,

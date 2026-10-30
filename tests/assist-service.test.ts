@@ -106,6 +106,40 @@ describe('编排层：意图理解', () => {
     expect(result.ok).toBe(false);
     expect(result.suggestions.length).toBeGreaterThan(0);
   });
+
+  it('脏话/闲聊被模型判为不相关时，不触发 AI 规划，回应得体且留痕', async () => {
+    const { service, telemetry } = build((req) =>
+      req.system.includes('路径规划师') ? JSON.stringify({ plausible: false }) : '{}',
+    );
+    const session = service.createSession();
+    const result = await service.interpret(session.id, '我想吃大便。');
+    expect(result.ok).toBe(false);
+    expect(result.intent).toBeNull();
+    /* 回应要拉回正题，而不是装傻继续规划 */
+    expect(result.message).toContain('没听出');
+    /* 留痕：off-topic 拒排要有埋点，答辩时可展示这层判断 */
+    const rejected = telemetry.events.find((e) => e.type === 'plan.rejected');
+    expect(rejected && 'stage' in rejected.payload ? (rejected.payload as { stage?: string }).stage : undefined).toBe('off-topic');
+    /* 会话不得被塞进一条编造出来的流程 */
+    expect(service.getSession(session.id)?.flow).toBeNull();
+  });
+
+  it('模型嘴上说「不相关」却仍附带步骤时，按形状错误拒绝，不进入引导', async () => {
+    const { service, telemetry } = build((req) =>
+      req.system.includes('路径规划师')
+        ? JSON.stringify({
+            plausible: false,
+            title: '低保复核',
+            steps: [{ screenId: 'gov.home', targetControlId: 'home.grid.minzheng', action: 'tap', goal: '进入民政', instruction: '点民政服务。' }],
+          })
+        : '{}',
+    );
+    const session = service.createSession();
+    const result = await service.interpret(session.id, '今天天气哈哈不错');
+    expect(result.ok).toBe(false);
+    const rejected = telemetry.events.find((e) => e.type === 'plan.rejected');
+    expect(rejected && 'stage' in rejected.payload ? (rejected.payload as { stage?: string }).stage : undefined).toBe('schema');
+  });
 });
 
 describe('编排层：引导', () => {

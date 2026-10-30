@@ -7,6 +7,7 @@ import { getRecognition, speak, stopSpeaking } from './useSpeech';
 import { PhoneFrame } from './components/PhoneFrame';
 import { ScreenView } from './components/ScreenView';
 import { GuideCard } from './components/GuideCard';
+import { FaceVerify } from './components/FaceVerify';
 import { MetricsBar } from './components/MetricsBar';
 
 /** 建立「表单控件 → 业务槽位」索引，用于把界面输入同步给 Agent */
@@ -64,6 +65,8 @@ export function App() {
   const [fieldDraft, setFieldDraft] = useState('');
   const [trace, setTrace] = useState<string[]>([]);
   const [transcript, setTranscript] = useState('');
+  /** 非空表示正在进行人脸核验，值为待放行的控件 id */
+  const [faceVerify, setFaceVerify] = useState<string | null>(null);
 
   const valuesRef = useRef<Record<string, string>>({});
   const attemptsRef = useRef(0);
@@ -189,6 +192,12 @@ export function App() {
         return;
       }
       if (action.targetControlId === controlId) {
+        /* 人脸核验是护栏场景：AI 不代按，用户本人按了之后还要走真实核验流程 */
+        if (action.guardrail === 'biometric') {
+          setFaceVerify(controlId);
+          speak('请把脸对准圆圈，保持不动。', speakOn);
+          return;
+        }
         await advance(controlId);
         return;
       }
@@ -206,7 +215,7 @@ export function App() {
       setScreenId(wrongNext);
       await guideWith(session.sessionId, wrongNext, nextAttempt, nextAttempt >= 3);
     },
-    [session, action, screenId, advance, guideWith],
+    [session, action, screenId, advance, guideWith, speakOn],
   );
 
   const onField = useCallback((fieldId: string) => {
@@ -434,6 +443,18 @@ export function App() {
       </main>
 
       <MetricsBar metrics={metrics} active={started} />
+
+      {faceVerify && (
+        <FaceVerify
+          open
+          onCancel={() => setFaceVerify(null)}
+          onDone={() => {
+            const controlId = faceVerify;
+            setFaceVerify(null);
+            if (controlId) void advance(controlId);
+          }}
+        />
+      )}
 
       {rescue && (
         <div className="modal-mask" onClick={() => setRescue(null)}>

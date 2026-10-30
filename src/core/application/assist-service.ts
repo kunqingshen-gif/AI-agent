@@ -273,11 +273,23 @@ export class AssistService {
      */
     if (!intent && this.llm.available) {
       const result = await this.planUnknown(sessionId, utterance);
-      if (result) {
+      if (result?.kind === 'planned') {
         intent = result.intent;
         flow = result.flow;
         planned = result.planned;
         source = 'llm';
+      } else if (result?.kind === 'offtopic') {
+        /*
+         * 模型判定原话不是在说办事（闲聊、脏话、问天气）。
+         * 不能装傻去规划，也不能说「没学会」——要坦白没听懂，并把话题拉回办事。
+         */
+        return {
+          ok: false,
+          intent: null,
+          suggestions: topSuggestions(utterance),
+          message: '这句话我没听出要办什么事。您可以说「我要办低保复核」「养老金要认证」这样的话，或者从下面三件里选一件。',
+          source,
+        };
       }
     }
 
@@ -329,12 +341,13 @@ export class AssistService {
    * 未收录事项的现场规划。
    *
    * 返回 null 表示「这个我也不敢排」——调用方据此退回标准话术。
-   * 三种失败都会留痕：形状不合法（zod）、契约不合法（plan.ts）、调用失败（网络/超时）。
+   * 返回 offtopic 表示「原话根本不是在说办事」——调用方给出澄清话术，而不是装傻规划。
+   * 各种失败都会留痕：不相关（模型判）、形状不合法（zod）、契约不合法（plan.ts）、调用失败（网络/超时）。
    */
   private async planUnknown(
     sessionId: string,
     utterance: string,
-  ): Promise<{ intent: Intent; flow: TaskFlow; planned: NonNullable<InterpretResult['planned']> } | null> {
+  ): Promise<{ kind: 'planned'; intent: Intent; flow: TaskFlow; planned: NonNullable<InterpretResult['planned']> } | { kind: 'offtopic' } | null> {
     try {
       const hints = topSuggestions(utterance).map((id) => TASK_FLOWS[id].title);
       const raw = await this.llm.complete(
@@ -358,6 +371,17 @@ export class AssistService {
           payload: { stage: 'schema', error: parsed.error.issues[0]?.message ?? 'invalid' },
         });
         return null;
+      }
+
+      /* 相关性闸门：闲聊、脏话、与办事无关的话，一律不排路径 */
+      if (!parsed.data.plausible) {
+        this.telemetry.record({
+          type: 'plan.rejected',
+          sessionId,
+          at: this.clock.now(),
+          payload: { stage: 'off-topic', utterance: utterance.slice(0, 40) },
+        });
+        return { kind: 'offtopic' };
       }
 
       const validation: PlanValidation = buildFlowFromPlan(toPlanDraft(parsed.data), utterance);
@@ -389,6 +413,7 @@ export class AssistService {
       });
 
       return {
+        kind: 'planned',
         intent: {
           taskId: flow.taskId,
           confidence: 0.72,
