@@ -1,4 +1,9 @@
 import type { AnswerPayload, FlowId, GuideAction, Intent, ScreenId, SessionMetrics, SlotName, TaskId, UserProfile } from '@shared/types';
+import type { ToolPayload } from '@core/domain/tools';
+import type { PreflightResult } from '@core/domain/preflight';
+import type { LifeScan } from '@core/domain/lifecycle';
+import type { ScamAssessment } from '@core/domain/scam';
+import type { CollabTicket } from '@core/domain/collab';
 
 const BASE = '';
 
@@ -23,14 +28,16 @@ export interface SessionResponse {
 
 export interface InterpretResponse {
   ok: boolean;
-  /** guide：要办事，进入逐屏引导；answer：在问知识，直接作答 */
-  mode: 'guide' | 'answer';
+  /** guide：要办事，进入逐屏引导；answer：在问知识；tool：进了管家的某项能力 */
+  mode: 'guide' | 'answer' | 'tool';
   intent: Intent | null;
   suggestions: FlowId[];
   message: string;
   source: 'llm' | 'rule' | 'none';
   /** mode === 'answer' 时的回答内容 */
   answer?: AnswerPayload;
+  /** mode === 'tool' 时的结果 */
+  tool?: ToolPayload;
   /** 事项未收录、由模型现场规划时才有；前端据此打「AI 现场规划」标 */
   planned?: {
     title: string;
@@ -69,4 +76,18 @@ export const api = {
   rescue: (sessionId: string) =>
     request<{ script: string; hotline: string }>('/api/rescue', { method: 'POST', body: JSON.stringify({ sessionId }) }),
   metrics: (sessionId: string) => request<SessionMetrics>(`/api/session/${sessionId}/metrics`),
+
+  /* 管家能力：与自然语言那条路共用同一批服务方法，结论不会有两套 */
+  preflight: (taskId?: TaskId) =>
+    request<PreflightResult>('/api/preflight', { method: 'POST', body: JSON.stringify(taskId ? { taskId } : {}) }),
+  lifecycle: () => request<LifeScan>('/api/lifecycle'),
+  scam: (text: string) => request<ScamAssessment>('/api/scam', { method: 'POST', body: JSON.stringify({ text }) }),
+  collabOpen: (sessionId: string) =>
+    request<CollabTicket>('/api/collab/open', { method: 'POST', body: JSON.stringify({ sessionId }) }),
+  collabJoin: (code: string, helper: string) =>
+    request<CollabTicket>('/api/collab/join', { method: 'POST', body: JSON.stringify({ code, helper }) }),
+  collabHint: (code: string, text: string) =>
+    request<CollabTicket>('/api/collab/hint', { method: 'POST', body: JSON.stringify({ code, text }) }),
+  collabClose: (code: string) =>
+    request<CollabTicket>('/api/collab/close', { method: 'POST', body: JSON.stringify({ code }) }),
 };

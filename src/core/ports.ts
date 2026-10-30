@@ -56,7 +56,11 @@ export interface TelemetryEvent {
     /** 模型给出的计划被 schema 或屏幕契约拦下 */
     | 'plan.rejected'
     /** 问答通道给出回答（source 区分模型作答与知识库兜底） */
-    | 'answer.served';
+    | 'answer.served'
+    /** 一句话被路由到管家的某种能力（体检 / 日历 / 反诈 / 协办） */
+    | 'tool.routed'
+    /** 协办码状态变化：生成、接入、留言、关闭 */
+    | 'collab.updated';
   sessionId: string;
   at: number;
   payload: Record<string, unknown>;

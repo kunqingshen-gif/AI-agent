@@ -9,6 +9,7 @@ import type {
   ScreenId,
   SessionMetrics,
   SlotName,
+  TaskId,
   UserProfile,
 } from '@shared/types';
 import { isCustomFlow } from '@shared/types';
@@ -21,6 +22,12 @@ import { looksLikeQuestion, matchFaq } from '../domain/faq';
 import { normalizeSpeak, sanitizeAnswer, sanitizeAssistantText } from '../domain/guardrails';
 import { extractSlotsByRule, ruleIntent, topSuggestions } from '../domain/intent-rules';
 import { buildFlowFromPlan, type PlanValidation } from '../domain/plan';
+import { preflightCheck, type PreflightResult } from '../domain/preflight';
+import { scanLifecycle, type LifeScan } from '../domain/lifecycle';
+import { assessScam, type ScamAssessment } from '../domain/scam';
+import { closeCollab, collabTelemetry, joinCollab, openCollab, pushHint, isCollabExpired, type CollabResult, type CollabTicket } from '../domain/collab';
+import { routeTool, type ToolPayload } from '../domain/tools';
+import { MATERIAL_LIBRARY } from '@shared/household';
 import {
   GUIDE_SYSTEM_PROMPT,
   GuideOutputSchema,
@@ -78,13 +85,20 @@ export interface InterpretResult {
    *  - guide：用户要办事 → 进入逐屏引导；
    *  - answer：用户在问知识（政策、材料、这个 App 怎么用）→ 直接回答，不强行拉进流程。
    */
-  mode: 'guide' | 'answer';
+  mode: 'guide' | 'answer' | 'tool';
   intent: Intent | null;
   suggestions: FlowId[];
   message: string;
   source: 'llm' | 'rule' | 'none';
   /** mode === 'answer' 时的回答内容 */
   answer?: AnswerPayload;
+  /**
+   * mode === 'tool' 时的结果：办前体检 / 守护日历 / 反诈判别 / 协办码。
+   *
+   * 这四种能力与「办事引导」并列，走同一条入口——用户说完一句话，
+   * 由系统决定是带他办、答他问、还是替他查一眼。而不是让他先找入口。
+   */
+  tool?: ToolPayload;
   /**
    * 本次是否为「AI 现场规划」。前端据此在复述行旁打标，
    * 让评委一眼看出这一条路径不是预置的，是模型当场排的。
@@ -125,6 +139,8 @@ export class AssistService {
    */
   private readonly sessions = new Map<string, SessionState>();
   private readonly rewriteCache = new Map<string, RewriteEntry>();
+  /** 协办码 → 票据。上限 50，过期的先清掉，避免长期运行后无限增长 */
+  private readonly collabs = new Map<string, CollabTicket>();
 
   constructor(
     private readonly llm: LlmPort,
@@ -205,11 +221,189 @@ export class AssistService {
     return TASK_LIST;
   }
 
+  /* ─────────────── 管家能力：四种，和办事引导并列 ─────────────── */
+
+  /**
+   * 办前体检。
+   *
+   * 不传事项时用会话里正在办的那一件；没有会话就按低保复核演示。
+   * 这里刻意不做「智能猜事项」——猜错事项的体检比不做更糟，
+   * 它会让人拿着一份不相干的清单去补材料。
+   */
+  preflight(taskId?: TaskId): PreflightResult | null {
+    return preflightCheck({
+      taskId: taskId ?? 'allowance.renew',
+      materials: MATERIAL_LIBRARY,
+      now: new Date(this.clock.now()),
+    });
+  }
+
+  /** 守护日历：把分散在各部门的时间点收成一张表 */
+  lifecycle(): LifeScan {
+    return scanLifecycle(undefined, new Date(this.clock.now()));
+  }
+
+  /** 可疑话术判别 */
+  scamOf(text: string): ScamAssessment {
+    return assessScam(text);
+  }
+
+  /**
+   * 生成或复用协办码。
+   *
+   * 复用是有意的：老人点两次「叫人帮我」不该出现两个码，
+   * 否则家属拿到的那个可能是旧的。
+   */
+  openCollabFor(sessionId: string): CollabTicket {
+    const session = this.requireSession(sessionId);
+    const now = this.clock.now();
+
+    for (const [code, ticket] of this.collabs) {
+      if (isCollabExpired(ticket, now) || ticket.status === 'closed') this.collabs.delete(code);
+    }
+    const existing = [...this.collabs.values()].find((ticket) => ticket.sessionId === sessionId);
+    if (existing) return existing;
+
+    const ticket = openCollab({
+      sessionId,
+      screenTitle: SCREENS[session.screenId]?.title ?? '手机桌面',
+      taskTitle: session.flow?.title ?? null,
+      now,
+    });
+    this.collabs.set(ticket.code, ticket);
+    this.telemetry.record(collabTelemetry(ticket, 'open', now));
+    return ticket;
+  }
+
+  joinCollabByCode(code: string, helper: string): CollabResult<CollabTicket> {
+    const ticket = this.collabs.get(code.trim().toUpperCase());
+    if (!ticket) {
+      return { ok: false, reason: '没找到这个协办码。让老人再念一遍，或者重新生成一个。' };
+    }
+    const now = this.clock.now();
+    const result = joinCollab(ticket, helper, now);
+    if (result.ok) {
+      this.collabs.set(result.value.code, result.value);
+      this.telemetry.record(collabTelemetry(result.value, 'join', now));
+    }
+    return result;
+  }
+
+  /**
+   * 家人发来的一条提示。
+   *
+   * 注意签名里没有控件 id：家人能说的只有一句话，按不按仍由老人决定。
+   * 这是「陪办」与「代办」的分界线，写在类型里而不是写在文案里。
+   */
+  hintByCode(code: string, text: string): CollabResult<CollabTicket> {
+    const ticket = this.collabs.get(code.trim().toUpperCase());
+    if (!ticket) return { ok: false, reason: '没找到这个协办码。' };
+    const now = this.clock.now();
+    const result = pushHint(ticket, text, now);
+    if (result.ok) {
+      this.collabs.set(result.value.code, result.value);
+      this.telemetry.record(collabTelemetry(result.value, 'hint', now));
+    }
+    return result;
+  }
+
+  closeCollabByCode(code: string): CollabResult<CollabTicket> {
+    const ticket = this.collabs.get(code.trim().toUpperCase());
+    if (!ticket) return { ok: false, reason: '没找到这个协办码。' };
+    const closed = closeCollab(ticket);
+    this.collabs.set(closed.code, closed);
+    this.telemetry.record(collabTelemetry(closed, 'close', this.clock.now()));
+    return { ok: true, value: closed };
+  }
+
+  /** 家人看到的「他现在在哪一页」由引导流程顺带更新，不需要额外调用 */
+  private syncCollabScreen(sessionId: string, screenId: ScreenId): void {
+    for (const ticket of this.collabs.values()) {
+      if (ticket.sessionId !== sessionId || ticket.status === 'closed') continue;
+      const title = SCREENS[screenId]?.title;
+      if (title && title !== ticket.screenTitle) {
+        this.collabs.set(ticket.code, { ...ticket, screenTitle: title });
+      }
+    }
+  }
+
+  /**
+   * 把一次工具路由变成可渲染的结果。
+   *
+   * 返回 null 表示「这次路由其实没东西可说」（比如反诈判别结果是 none），
+   * 此时调用方应当继续走原有的办事/问答链路，而不是弹一个空面板。
+   */
+  private buildTool(sessionId: string, route: ReturnType<typeof routeTool>, utterance: string): { payload: ToolPayload; message: string } | null {
+    if (!route) return null;
+    const now = new Date(this.clock.now());
+
+    if (route.kind === 'preflight') {
+      const session = this.getSession(sessionId);
+      const fromSession =
+        session?.intent && !isCustomFlow(session.intent.taskId) ? (session.intent.taskId as TaskId) : undefined;
+      const result = preflightCheck({
+        taskId: route.taskId ?? fromSession ?? 'allowance.renew',
+        materials: MATERIAL_LIBRARY,
+        now,
+      });
+      if (!result) return null;
+      return { payload: { kind: 'preflight', data: result }, message: result.summary };
+    }
+
+    if (route.kind === 'scam') {
+      const assessment = assessScam(utterance);
+      if (assessment.level === 'none') return null;
+      return { payload: { kind: 'scam', data: assessment, quote: route.quote }, message: assessment.verdict };
+    }
+
+    if (route.kind === 'collab') {
+      const ticket = this.openCollabFor(sessionId);
+      return {
+        payload: { kind: 'collab', data: ticket },
+        message: `协办码 ${ticket.code}，十分钟内有效。念给家人，他在自己手机上输这个码就能陪着您办。`,
+      };
+    }
+
+    const scan = this.lifecycle();
+    return { payload: { kind: 'lifecycle', data: scan }, message: scan.summary };
+  }
+
   /* ─────────────── 意图理解 ─────────────── */
 
   async interpret(sessionId: string, utterance: string): Promise<InterpretResult> {
     const session = this.requireSession(sessionId);
     const ruleBased = ruleIntent(utterance);
+
+    /*
+     * ⓪-1 管家通道：这句话可能根本不是在「办某一件事」，而是在问
+     *      「我材料够不够」「最近有什么事」「这是不是骗子」「能不能叫人帮我」。
+     *
+     * 放在问答之前，是因为这四种问题问的都是「我的情况」，不是公共知识：
+     * 「我的材料还差什么」不该被答成一段通用的材料清单。
+     * 路由不中就安静地往下走，不抢原有链路。
+     */
+    const route = routeTool(utterance);
+    if (route) {
+      const built = this.buildTool(sessionId, route, utterance);
+      if (built) {
+        this.syncCollabScreen(sessionId, session.screenId);
+        this.telemetry.record({
+          type: 'tool.routed',
+          sessionId,
+          at: this.clock.now(),
+          payload: { kind: route.kind, confidence: route.confidence, quote: route.quote, reason: route.reason },
+        });
+        return {
+          ok: true,
+          mode: 'tool',
+          intent: null,
+          suggestions: [],
+          message: built.message,
+          source: 'rule',
+          tool: built.payload,
+        };
+      }
+    }
 
     /*
      * ⓪ 问答通道优先：用户是在问知识，不是在要你动手。
@@ -600,6 +794,8 @@ export class AssistService {
     session.lastSeenAt = startedAt;
     session.screenId = req.screenId;
     session.slots = { ...session.slots, ...(req.slots ?? {}) };
+    /* 家人在另一头能看到老人现在停在哪一页——这是「陪办」最有用的那一眼 */
+    this.syncCollabScreen(sessionId, req.screenId);
 
     const flow = session.flow;
     if (!flow) {

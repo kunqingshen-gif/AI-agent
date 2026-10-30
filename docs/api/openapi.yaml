@@ -319,6 +319,147 @@ paths:
                     additionalProperties: { type: integer }
                   at: { type: integer }
 
+  /api/preflight:
+    post:
+      tags: [guardian]
+      summary: 办前体检（提交前的模拟审核）
+      description: 用归集到的材料（含有效期与归属人）与档案槽位判断会不会被退回。结论是预判，不冒充审批结果。
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                taskId: { type: string, enum: [allowance.renew, pension.qualify, medical.filing, utility.pay] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PreflightResult' }
+        '404':
+          description: 该事项未录入受理要求，不做体检
+
+  /api/lifecycle:
+    get:
+      tags: [guardian]
+      summary: 守护日历（到期、年检、复核）
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LifeScan' }
+
+  /api/scam:
+    post:
+      tags: [guardian]
+      summary: 可疑话术判别
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, maxLength: 300 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScamAssessment' }
+
+  /api/collab/open:
+    post:
+      tags: [guardian]
+      summary: 生成或复用协办码
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId]
+              properties:
+                sessionId: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CollabTicket' }
+        '404': { $ref: '#/components/responses/SessionNotFound' }
+
+  /api/collab/join:
+    post:
+      tags: [guardian]
+      summary: 家人接入协办
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, helper]
+              properties:
+                code: { type: string, minLength: 4, maxLength: 10 }
+                helper: { type: string, maxLength: 10 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CollabTicket' }
+        '409':
+          description: 码过期、已结束或不存在
+
+  /api/collab/hint:
+    post:
+      tags: [guardian]
+      summary: 家人发一句话（只是提示，不是代按）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, text]
+              properties:
+                code: { type: string }
+                text: { type: string, maxLength: 40 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CollabTicket' }
+        '409':
+          description: 未接入、已结束、超长或超出条数上限
+
+  /api/collab/close:
+    post:
+      tags: [guardian]
+      summary: 结束协办
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CollabTicket' }
+        '404':
+          description: 码不存在
+
 components:
   responses:
     BadRequest:
@@ -342,6 +483,118 @@ components:
               message: { type: string }
 
   schemas:
+    PreflightResult:
+      type: object
+      required: [taskId, taskTitle, verdict, score, onePassRate, items, blockers, warnings, summary, fixes, basis]
+      properties:
+        taskId: { type: string }
+        taskTitle: { type: string }
+        verdict: { type: string, enum: [ready, 'at-risk', blocked] }
+        score: { type: integer, minimum: 0, maximum: 100 }
+        onePassRate: { type: integer, description: 估算的一次办成率（百分比） }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              materialId: { type: string }
+              name: { type: string }
+              level: { type: string, enum: [blocker, warning, pass] }
+              detail: { type: string }
+              daysLeft: { type: integer }
+        blockers:
+          type: array
+          items: { type: object }
+        warnings:
+          type: array
+          items: { type: object }
+        summary: { type: string }
+        fixes:
+          type: array
+          items:
+            type: object
+            properties:
+              label: { type: string }
+              kind: { type: string, enum: [renew, obtain, owner, confirm] }
+              where: { type: string }
+              script: { type: string }
+        basis: { type: string, description: 判断依据，含「以受理窗口为准」}
+
+    LifeScan:
+      type: object
+      properties:
+        entries:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              title: { type: string }
+              dueAt: { type: string, format: date }
+              kind: { type: string, enum: [deadline, annual, review, bill] }
+              consequence: { type: string }
+              daysLeft: { type: integer }
+              urgency: { type: string, enum: [overdue, urgent, soon, later] }
+              phrase: { type: string }
+              actionLabel: { type: string }
+              relatedTaskId: { type: string }
+              targetScreenId: { type: string }
+        next: { type: object, nullable: true }
+        dueSoon: { type: integer }
+        overdue: { type: integer }
+        summary: { type: string }
+
+    ScamAssessment:
+      type: object
+      properties:
+        level: { type: string, enum: [high, medium, low, none] }
+        score: { type: integer }
+        hits:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              label: { type: string }
+              weight: { type: integer }
+        alreadyExposed: { type: boolean, description: 钱或验证码已经给出去了，走止损路径 }
+        verdict: { type: string }
+        advice:
+          type: array
+          items: { type: string }
+        hotlines:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              phone: { type: string }
+        familyNote: { type: string }
+        context:
+          type: array
+          items: { type: string }
+
+    CollabTicket:
+      type: object
+      properties:
+        code: { type: string, description: 6 位，不含 0/O/1/I }
+        sessionId: { type: string }
+        createdAt: { type: integer }
+        expiresAt: { type: integer }
+        status: { type: string, enum: [waiting, joined, closed] }
+        helper: { type: string, nullable: true }
+        screenTitle: { type: string, description: 老人当前所在页，家人只读 }
+        taskTitle: { type: string, nullable: true }
+        hints:
+          type: array
+          description: 家人的提示。注意只有文本，没有控件 id——代按在数据层面不存在
+          items:
+            type: object
+            properties:
+              at: { type: integer }
+              from: { type: string }
+              text: { type: string }
+
     UserProfilePatch:
       type: object
       properties:

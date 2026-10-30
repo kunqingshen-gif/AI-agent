@@ -5,7 +5,7 @@ import helmet from '@fastify/helmet';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { SCREEN_IDS, type AssistRequest, type ScreenId, type SlotName } from '@shared/types';
+import { SCREEN_IDS, TASK_IDS, type AssistRequest, type ScreenId, type SlotName, type TaskId } from '@shared/types';
 import { VERSION } from '@shared/version';
 import { SCREENS } from '@shared/screens';
 import type { AssistService } from '@core/application/assist-service';
@@ -48,6 +48,18 @@ const ExtractSchema = z.object({
 });
 
 const RescueSchema = z.object({ sessionId: z.string().min(8).max(64) });
+
+const PreflightSchema = z.object({
+  taskId: z.enum(TASK_IDS).optional(),
+  sessionId: z.string().min(8).max(64).optional(),
+});
+
+const ScamSchema = z.object({ text: z.string().trim().min(2).max(300) });
+
+const CollabOpenSchema = z.object({ sessionId: z.string().min(8).max(64) });
+const CollabJoinSchema = z.object({ code: z.string().trim().min(4).max(10), helper: z.string().trim().min(1).max(10) });
+const CollabHintSchema = z.object({ code: z.string().trim().min(4).max(10), text: z.string().trim().min(1).max(60) });
+const CollabCodeSchema = z.object({ code: z.string().trim().min(4).max(10) });
 
 export interface AppDeps {
   config: AppConfig;
@@ -219,6 +231,63 @@ export async function buildApp(deps: AppDeps) {
     } catch {
       return reply.status(404).send({ error: 'SESSION_NOT_FOUND', message: '会话已过期，请重新开始' });
     }
+  });
+
+  /*
+   * 管家能力的独立入口。
+   *
+   * 这些接口是给「面板」用的：用户可能在面板里直接点事项看体检，
+   * 不一定先说话。自然语言那条路走 /api/intent 的 tool 通道，两条路共用同一个服务方法，
+   * 所以不会出现「说一句话和点一下，结论不一样」的情况。
+   */
+  app.post('/api/preflight', async (request, reply) => {
+    const parsed = PreflightSchema.safeParse(request.body ?? {});
+    if (!parsed.success) return badRequest(reply, parsed.error.flatten());
+    const result = service.preflight(parsed.data.taskId as TaskId | undefined);
+    if (!result) return reply.status(404).send({ error: 'NOT_FOUND', message: '这件事还没有录入受理要求，做不了体检' });
+    return result;
+  });
+
+  app.get('/api/lifecycle', async () => service.lifecycle());
+
+  app.post('/api/scam', async (request, reply) => {
+    const parsed = ScamSchema.safeParse(request.body);
+    if (!parsed.success) return badRequest(reply, parsed.error.flatten());
+    return service.scamOf(parsed.data.text);
+  });
+
+  app.post('/api/collab/open', async (request, reply) => {
+    const parsed = CollabOpenSchema.safeParse(request.body);
+    if (!parsed.success) return badRequest(reply, parsed.error.flatten());
+    try {
+      return service.openCollabFor(parsed.data.sessionId);
+    } catch {
+      return reply.status(404).send({ error: 'SESSION_NOT_FOUND', message: '会话已过期，请重新开始' });
+    }
+  });
+
+  app.post('/api/collab/join', async (request, reply) => {
+    const parsed = CollabJoinSchema.safeParse(request.body);
+    if (!parsed.success) return badRequest(reply, parsed.error.flatten());
+    const result = service.joinCollabByCode(parsed.data.code, parsed.data.helper);
+    if (!result.ok) return reply.status(409).send({ error: 'COLLAB_REJECTED', message: result.reason });
+    return result.value;
+  });
+
+  app.post('/api/collab/hint', async (request, reply) => {
+    const parsed = CollabHintSchema.safeParse(request.body);
+    if (!parsed.success) return badRequest(reply, parsed.error.flatten());
+    const result = service.hintByCode(parsed.data.code, parsed.data.text);
+    if (!result.ok) return reply.status(409).send({ error: 'COLLAB_REJECTED', message: result.reason });
+    return result.value;
+  });
+
+  app.post('/api/collab/close', async (request, reply) => {
+    const parsed = CollabCodeSchema.safeParse(request.body);
+    if (!parsed.success) return badRequest(reply, parsed.error.flatten());
+    const result = service.closeCollabByCode(parsed.data.code);
+    if (!result.ok) return reply.status(404).send({ error: 'NOT_FOUND', message: result.reason });
+    return result.value;
   });
 
   app.get('/api/metrics', async () => ({ events: await telemetry.summary(), at: Date.now() }));

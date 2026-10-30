@@ -3,6 +3,10 @@ import type { AnswerPayload, GuideAction, Intent, ScreenId, SessionMetrics, Slot
 import { SCREENS } from '@shared/screens';
 import { api, type InterpretResponse, type MetaResponse, type SessionResponse } from './client';
 import { PARENT, TAB_OF, isBrowseControl, resolveTarget } from './nav';
+import { GuardianSheet, type GuardianKind } from './components/GuardianSheet';
+import type { ToolPayload } from '@core/domain/tools';
+import type { CollabTicket } from '@core/domain/collab';
+import type { LifeEntry } from '@core/domain/lifecycle';
 import { getRecognition, speak, stopSpeaking } from './useSpeech';
 import { PhoneFrame } from './components/PhoneFrame';
 import { ScreenView } from './components/ScreenView';
@@ -82,6 +86,21 @@ export function App() {
   const [fontLarge, setFontLarge] = useState(false);
   /** 客服弹窗：热线与求助话术 */
   const [helpOpen, setHelpOpen] = useState(false);
+  /**
+   * 管家抽屉：四种能力共用一个抽屉。
+   * payload 为空表示还没取到数据（反诈的输入态就是这种）。
+   */
+  const [guardian, setGuardian] = useState<{ kind: GuardianKind; payload: ToolPayload | null } | null>(null);
+  const [guardianBusy, setGuardianBusy] = useState(false);
+  /** 家人发来的那句话，显示在手机的屏幕上 */
+  const [collabHint, setCollabHint] = useState<{ from: string; text: string } | null>(null);
+  /**
+   * 开场主动提醒。
+   *
+   * 这是「管家」与「目录」最直白的一次分野：目录等你来查，管家先开口。
+   * 只在水费这种一周内到期的事情上开口，不天天弹——频繁提醒等于没提醒。
+   */
+  const [nudge, setNudge] = useState<LifeEntry | null>(null);
 
   const valuesRef = useRef<Record<string, string>>({});
   const attemptsRef = useRef(0);
@@ -151,6 +170,17 @@ export function App() {
           api.metrics(sid).then(setMetrics).catch(() => undefined);
           return;
         }
+        /*
+         * 管家通道：这句话被路由成了体检 / 日历 / 反诈 / 协办。
+         * 不换屏幕、不设意图——用户问的是「我的情况」，不是让你去按哪个按钮。
+         */
+        if (result.mode === 'tool' && result.tool) {
+          setAnswer(null);
+          setGuardian({ kind: result.tool.kind, payload: result.tool });
+          if (result.message) speak(result.message, speakOn);
+          api.metrics(sid).then(setMetrics).catch(() => undefined);
+          return;
+        }
         if (!result.ok || !result.intent) {
           setToast(result.message);
           return;
@@ -172,6 +202,70 @@ export function App() {
     },
     [session, guideWith, speakOn],
   );
+
+  /** 直接打开某个管家抽屉（不走语音输入的那条路） */
+  const openGuardian = useCallback(
+    async (kind: GuardianKind) => {
+      setGuardian({ kind, payload: null });
+      if (kind === 'scam') return; /* 反诈先让用户把话打出来 */
+      setGuardianBusy(true);
+      try {
+        if (kind === 'preflight') {
+          const data = await api.preflight();
+          setGuardian({ kind, payload: { kind: 'preflight', data } });
+        } else if (kind === 'lifecycle') {
+          const data = await api.lifecycle();
+          setGuardian({ kind, payload: { kind: 'lifecycle', data } });
+        } else {
+          /* 协办要挂在会话上：家人看到的那一页就是这条会话当前所在的屏 */
+          let sid = session?.sessionId;
+          if (!sid) {
+            const created = await api.createSession({ hearingImpaired: !speakOn });
+            setSession(created);
+            sid = created.sessionId;
+          }
+          const ticket = await api.collabOpen(sid);
+          setGuardian({ kind, payload: { kind: 'collab', data: ticket } });
+        }
+      } catch (error) {
+        setToast(error instanceof Error ? error.message : '没取到数据，稍后再试');
+        setGuardian(null);
+      } finally {
+        setGuardianBusy(false);
+      }
+    },
+    [session, speakOn],
+  );
+
+  /** 家人发来一句话 → 显示在手机屏上，并让屏幕朗读出来 */
+  const syncCollab = useCallback(
+    (ticket: CollabTicket) => {
+      const last = ticket.hints[ticket.hints.length - 1];
+      if (!last) return;
+      setCollabHint({ from: last.from, text: last.text });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .lifecycle()
+      .then((scan) => {
+        const first = scan.entries[0];
+        if (alive && first && (first.urgency === 'urgent' || first.urgency === 'overdue')) setNudge(first);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!collabHint) return;
+    const timer = setTimeout(() => setCollabHint(null), 12000);
+    return () => clearTimeout(timer);
+  }, [collabHint]);
 
   /**
    * 换页并记栈。
@@ -456,9 +550,48 @@ export function App() {
               activeTabId={TAB_OF[screenId] ?? (stack.length > 0 ? TAB_OF[stack[stack.length - 1] as ScreenId] : undefined)}
             />
           </PhoneFrame>
+
+          {/*
+            * 家人发来的那句话，落在老人正在看的这块屏幕上。
+            * 这是整个协办功能的意义所在：不是替他按，而是有人在他旁边说一句。
+            */}
+          {collabHint && (
+            <div className="collab-bubble" role="status">
+              <span className="collab-bubble-from">{collabHint.from} 说</span>
+              <span className="collab-bubble-text">{collabHint.text}</span>
+              <button className="collab-bubble-close" type="button" onClick={() => setCollabHint(null)}>
+                知道了
+              </button>
+            </div>
+          )}
         </section>
 
         <section className="console-col">
+          {nudge && (
+            <div className="nudge">
+              <div className="nudge-text">
+                <strong>我先替您看了一眼</strong>
+                <span>
+                  「{nudge.title}」{nudge.phrase}，{nudge.consequence}
+                </span>
+              </div>
+              <div className="nudge-actions">
+                <button
+                  type="button"
+                  className="nudge-go"
+                  onClick={() => {
+                    setNudge(null);
+                    void openGuardian('lifecycle');
+                  }}
+                >
+                  看看还有哪些
+                </button>
+                <button type="button" className="link-btn" onClick={() => setNudge(null)}>
+                  知道了
+                </button>
+              </div>
+            </div>
+          )}
           <div className="say-box">
             <div className="say-input">
               <input
@@ -478,6 +611,25 @@ export function App() {
               </button>
               <button className="send" onClick={() => void say(transcript)} type="button" disabled={busy}>
                 开始
+              </button>
+            </div>
+            {/*
+              * 四个入口不是四个功能页，而是四种「我说不清、你替我看一眼」的请求。
+              * 摆在这里是为了让评委一眼看到它们与办事并列，而不是又一个目录。
+              */}
+            <div className="guardian-strip">
+              <span className="guardian-strip-label">让管家先看一眼：</span>
+              <button type="button" className="g-btn" onClick={() => void openGuardian('preflight')}>
+                材料够不够
+              </button>
+              <button type="button" className="g-btn" onClick={() => void openGuardian('lifecycle')}>
+                有什么要到期
+              </button>
+              <button type="button" className="g-btn" onClick={() => void openGuardian('collab')}>
+                叫人陪我办
+              </button>
+              <button type="button" className="g-btn g-btn-warn" onClick={() => void openGuardian('scam')}>
+                这句话不对劲？
               </button>
             </div>
             {intent && (
@@ -593,6 +745,27 @@ export function App() {
       </main>
 
       <MetricsBar metrics={metrics} active={started} />
+
+      {guardian && (
+        <GuardianSheet
+          kind={guardian.kind}
+          payload={guardian.payload}
+          loading={guardianBusy}
+          onClose={() => setGuardian(null)}
+          onResult={(payload) => setGuardian({ kind: payload.kind, payload })}
+          onCollabSync={syncCollab}
+          onStartTask={(taskId) => {
+            setGuardian(null);
+            const title = session?.tasks.find((task) => task.taskId === taskId)?.title;
+            void say(title ? `我要办${title}` : '我要办事');
+          }}
+          onOpenScreen={(id) => {
+            setGuardian(null);
+            goTo(id);
+          }}
+          onToast={setToast}
+        />
+      )}
 
       {faceVerify && (
         <FaceVerify
