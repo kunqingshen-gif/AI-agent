@@ -29,6 +29,9 @@ export function isCustomFlow(id: string): id is `custom.${string}` {
 
 export const SCREEN_IDS = [
   'gov.home',
+  'gov.service',
+  'gov.mine',
+  'gov.edu.list',
   'gov.civil.list',
   'civil.allowance.intro',
   'civil.allowance.form',
@@ -70,7 +73,9 @@ export type ScreenBlock =
   | { type: 'form'; id: string; fields: FormField[] }
   | { type: 'actions'; id: string; items: Control[] }
   | { type: 'dialog'; id: string; title: string; text: string; items: Control[] }
-  | { type: 'result'; id: string; title: string; lines: string[] };
+  | { type: 'result'; id: string; title: string; lines: string[] }
+  /** 个人信息卡：头像、姓名、认证状态、几个关键数值 */
+  | { type: 'profile'; id: string; name: string; badge: string; meta: string[]; stats: Array<{ label: string; value: string }> };
 
 export interface FormField {
   id: string;
@@ -126,6 +131,26 @@ export interface Intent {
   restated: string;
   source: 'llm' | 'rule';
   rawUtterance: string;
+}
+
+/* ────────────────────────── 问答 ────────────────────────── */
+
+/**
+ * 一次问答的结果。
+ *
+ * 「有问必答」是本产品对老人的承诺：问政策、问材料、问这个 App 怎么用，
+ * 都不该回一句「这件事我还没学会」。所以问答与引导是两条并列通道：
+ * 问答给知识，引导给动作，二者通过 relatedTaskId 打通。
+ */
+export interface AnswerPayload {
+  /** 主体回答，口语，160 字以内 */
+  text: string;
+  /** 最多 3 条要点 */
+  points: string[];
+  /** 这事本产品能直接办时给出事项 id，前端提供「直接去办」 */
+  relatedTaskId?: TaskId;
+  source: 'llm' | 'rule';
+  latencyMs?: number;
 }
 
 /* ────────────────────────── 护栏 ────────────────────────── */

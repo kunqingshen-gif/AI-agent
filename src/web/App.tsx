@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { GuideAction, Intent, ScreenId, SessionMetrics, SlotName } from '@shared/types';
+import type { AnswerPayload, GuideAction, Intent, ScreenId, SessionMetrics, SlotName } from '@shared/types';
 import { SCREENS } from '@shared/screens';
 import { api, type InterpretResponse, type MetaResponse, type SessionResponse } from './client';
 import { PARENT, resolveTarget } from './nav';
@@ -7,6 +7,7 @@ import { getRecognition, speak, stopSpeaking } from './useSpeech';
 import { PhoneFrame } from './components/PhoneFrame';
 import { ScreenView } from './components/ScreenView';
 import { GuideCard } from './components/GuideCard';
+import { AnswerCard } from './components/AnswerCard';
 import { FaceVerify } from './components/FaceVerify';
 import { MetricsBar } from './components/MetricsBar';
 
@@ -21,7 +22,17 @@ for (const screen of Object.values(SCREENS)) {
   }
 }
 
+/** 底部标签对应的当前屏，用于正确高亮 */
+const TAB_SCREEN: Record<string, string> = {
+  'gov.home': 'tab.index',
+  'gov.service': 'tab.service',
+  'gov.mine': 'tab.mine',
+};
+
 const EXAMPLES = ['我想问一下低保那个复核，今年还没弄呢', '养老金要认证，我不会弄', '我要交水费'];
+
+/** 起手就能问的问题，和「办事」示例并列展示——问答不是附加功能，是主能力之一 */
+const QUESTION_EXAMPLES = ['什么是教育服务', '高龄津贴要什么条件', '低保复核要带什么材料'];
 
 function collectSlots(values: Record<string, string>): Partial<Record<SlotName, string>> {
   const slots: Partial<Record<SlotName, string>> = {};
@@ -50,6 +61,8 @@ export function App() {
   const [intent, setIntent] = useState<Intent | null>(null);
   /** 仅当事项未收录、由模型现场规划时非空 */
   const [planNote, setPlanNote] = useState<InterpretResponse['planned'] | null>(null);
+  /** 非空表示当前展示的是一条问答结果 */
+  const [answer, setAnswer] = useState<AnswerPayload | null>(null);
   const [screenId, setScreenId] = useState<ScreenId>('gov.home');
   const [action, setAction] = useState<GuideAction | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -129,10 +142,18 @@ export function App() {
           sid = created.sessionId;
         }
         const result = await api.interpret(sid, utterance);
+        if (result.mode === 'answer' && result.answer) {
+          setAnswer(result.answer);
+          setPlanNote(null);
+          speak(result.answer.text, speakOn);
+          api.metrics(sid).then(setMetrics).catch(() => undefined);
+          return;
+        }
         if (!result.ok || !result.intent) {
           setToast(result.message);
           return;
         }
+        setAnswer(null);
         setIntent(result.intent);
         setPlanNote(result.planned ?? null);
         setScreenId('gov.home');
@@ -183,8 +204,20 @@ export function App() {
 
   const onControl = useCallback(
     async (controlId: string) => {
+      /*
+       * 还没开始办事时也允许逛应用：老人常常是先翻一翻再问。
+       * 服务、我的、教育服务这类页面不依赖会话，先放开，
+       * 免得「想看看我的办件」也被要求先说一句话。
+       */
       if (!session) {
-        setToast('请先说出您要办的事');
+        const { next, message } = resolveTarget(controlId);
+        if (next) {
+          setScreenId(next);
+          setAttempts(0);
+          attemptsRef.current = 0;
+          return;
+        }
+        setToast(message ?? '请先说出您要办的事');
         return;
       }
       if (!action) {
@@ -200,6 +233,22 @@ export function App() {
         }
         await advance(controlId);
         return;
+      }
+
+      /*
+       * 底部标签是导航，不是误操作：换页但不算「乱点」。
+       * 换完仍会请求一次引导，Agent 会在卡片上把用户拉回正在办的事——
+       * 这正是要演示的能力：人跑偏了，它知道怎么拉回来。
+       */
+      if (controlId.startsWith('tab.')) {
+        const { next: tabTarget } = resolveTarget(controlId);
+        if (tabTarget) {
+          setScreenId(tabTarget);
+          setAttempts(0);
+          attemptsRef.current = 0;
+          await guideWith(session.sessionId, tabTarget, 0);
+          return;
+        }
       }
 
       /* 点错了：真实应用照常跳转，Agent 再把人拉回来（这才是要验证的能力） */
@@ -319,7 +368,7 @@ export function App() {
 
       <main className="stage">
         <section className="phone-col">
-          <PhoneFrame caption={started ? `${screen.app} · ${screen.title}` : '政务服务平台 · 首页'}>
+          <PhoneFrame caption={`${screen.app} · ${screen.title}`}>
             <ScreenView
               screen={screen}
               highlightId={action?.targetControlId}
@@ -328,6 +377,7 @@ export function App() {
               onControl={(id) => void onControl(id)}
               onField={onField}
               {...(started && PARENT[screenId] ? { onBack: () => void onBack() } : {})}
+              {...(TAB_SCREEN[screenId] ? { activeTabId: TAB_SCREEN[screenId] } : {})}
             />
           </PhoneFrame>
         </section>
@@ -379,11 +429,35 @@ export function App() {
             )}
           </div>
 
+          {answer && (
+            <AnswerCard
+              answer={answer}
+              {...(answer.relatedTaskId
+                ? { taskTitle: session?.tasks.find((task) => task.taskId === answer.relatedTaskId)?.title ?? '' }
+                : {})}
+              {...(answer.relatedTaskId
+                ? {
+                    onStartTask: () => {
+                      const title = session?.tasks.find((task) => task.taskId === answer.relatedTaskId)?.title;
+                      setAnswer(null);
+                      if (title) void say(`我要办${title}`);
+                    },
+                  }
+                : {})}
+              onAskMore={() => {
+                setAnswer(null);
+                setTranscript('');
+              }}
+              onClose={() => setAnswer(null)}
+            />
+          )}
+
           <GuideCard
             action={action}
             loading={busy}
             started={started}
             examples={EXAMPLES}
+            questions={QUESTION_EXAMPLES}
             onExample={(text) => void say(text)}
             onSpeak={() => action && speak(action.instruction, true)}
             onPrefill={() => void applyPrefill()}

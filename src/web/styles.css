@@ -329,6 +329,14 @@ input {
   gap: 10px;
 }
 
+/*
+ * 关键：列表、宫格在纵向 flex 容器里默认会被「压缩」到只剩一行，
+ * 长列表看起来像只渲染了第一项。内容该高就高，超出的交给 app-body 滚动。
+ */
+.app-body > * {
+  flex: 0 0 auto;
+}
+
 .app-tabs {
   height: 52px;
   flex: 0 0 52px;
@@ -1458,4 +1466,150 @@ input {
   font-size: 14px;
   color: var(--ink-2);
   min-height: 20px;
+}
+
+/* ─────────── 问答卡片 ─────────── */
+.card-answer {
+  border-left: 3px solid #2f6fd0;
+}
+
+.answer-chip {
+  flex: none;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1d4f9c;
+  background: #eaf2ff;
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+
+.card-head .source-chip {
+  flex: none;
+  white-space: nowrap;
+}
+
+.answer-close {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.answer-text {
+  margin: 12px 0 0;
+  font-size: 16px;
+  line-height: 1.8;
+  color: var(--ink-1);
+}
+
+.answer-points {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--ink-2);
+}
+
+.answer-points li {
+  margin-bottom: 4px;
+}
+
+.answer-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.examples-label {
+  margin: 14px 0 -4px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.example-question {
+  border-style: dashed;
+}
+
+/* ─────────── 个人信息卡（我的） ─────────── */
+.profile-card {
+  margin: 12px 0 4px;
+  padding: 14px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #eef4ff 0%, #f7faff 100%);
+  border: 1px solid #dbe6f8;
+}
+
+.profile-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.profile-avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: #2f6fd0;
+  color: #fff;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.profile-id {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.profile-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink-1);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.profile-badge {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #1d7a4f;
+  background: #e6f6ee;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.profile-meta {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.profile-stats {
+  display: flex;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed #d5e2f5;
+}
+
+.profile-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.profile-stat strong {
+  font-size: 16px;
+  color: #1d4f9c;
+}
+
+.profile-stat em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ink-3);
 }

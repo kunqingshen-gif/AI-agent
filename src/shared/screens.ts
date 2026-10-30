@@ -48,11 +48,145 @@ export const SCREENS: Record<ScreenModel['id'], ScreenModel> = {
       },
       { type: 'notice', id: 'home.notice', tone: 'info', text: '系统维护公告：10月31日 00:00-02:00 部分服务暂停' },
     ],
-    tabs: [c('home.tab.index', '首页', 'tab'), c('home.tab.service', '服务', 'tab'), c('home.tab.me', '我的', 'tab')],
+    tabs: [c('tab.index', '首页', 'tab'), c('tab.service', '服务', 'tab'), c('tab.mine', '我的', 'tab')],
     traps: ['误点「医保服务」，进入后无低保入口', '误点「更多服务」，进入全部服务长列表，需二次查找'],
   },
 
   /* ─────────── 民政服务列表 ─────────── */
+  /* ─────────── 服务大厅（底部「服务」标签） ─────────── */
+  'gov.service': {
+    id: 'gov.service',
+    app: '政务服务平台',
+    title: '服务大厅',
+    semantics: '全部政务服务入口，按主题与人生阶段分区，顶部有搜索框，底部为导航栏。',
+    blocks: [
+      { type: 'search', id: 'service.search', placeholder: '搜索服务名称，如：低保、认证' },
+      { type: 'text', id: 'service.mine.title', title: '我的常用', paragraphs: [] },
+      {
+        type: 'list',
+        id: 'service.recent',
+        items: [
+          c('service.item.dibao-renew', '最低生活保障对象定期复核', 'listItem', '最近使用 · 每半年一次'),
+          c('service.item.pension', '养老待遇资格认证', 'listItem', '最近使用 · 刷脸即可'),
+          c('service.item.utility', '生活缴费', 'listItem', '最近使用 · 水费/电费/燃气'),
+        ],
+      },
+      { type: 'text', id: 'service.topic.title', title: '按人生阶段找', paragraphs: [] },
+      {
+        type: 'list',
+        id: 'service.topic',
+        items: [
+          c('service.topic.birth', '出生一件事', 'listItem', '出生医学证明、户口登记、医保参保'),
+          c('service.topic.school', '上学一件事', 'listItem', '入学报名、学籍、助学贷款'),
+          c('service.topic.work', '工作一件事', 'listItem', '就业登记、社保参保、技能培训'),
+          c('service.topic.retire', '退休一件事', 'listItem', '养老待遇申领、医保关系转移'),
+          c('service.topic.pass', '身后一件事', 'listItem', '待遇停发、丧葬补助、账户注销'),
+        ],
+      },
+      {
+        type: 'grid',
+        id: 'service.grid',
+        columns: 4,
+        items: [
+          c('service.grid.shebao', '社保服务', 'icon'),
+          c('service.grid.yibao', '医保服务', 'icon'),
+          c('service.grid.minzheng', '民政服务', 'icon'),
+          c('service.grid.huji', '户籍办理', 'icon'),
+          c('service.grid.edu', '教育服务', 'icon'),
+          c('service.grid.gongjijin', '公积金', 'icon'),
+          c('service.grid.shuiwu', '税务服务', 'icon'),
+          c('service.grid.gengduo', '全部服务', 'icon'),
+        ],
+      },
+      { type: 'notice', id: 'service.notice', tone: 'info', text: '本月新增：高龄老人津贴「免申即享」试点，符合条件的老人无需申请，津贴直接发放到社保卡。' },
+    ],
+    tabs: [c('tab.index', '首页', 'tab'), c('tab.service', '服务', 'tab'), c('tab.mine', '我的', 'tab')],
+    traps: ['「上学一件事」里没有低保入口，误点后需返回'],
+  },
+
+  /* ─────────── 我的（底部「我的」标签） ─────────── */
+  'gov.mine': {
+    id: 'gov.mine',
+    app: '政务服务平台',
+    title: '我的',
+    semantics: '个人中心：实名信息、我的办件进度、我的材料、家人代办与设置入口，底部为导航栏。',
+    blocks: [
+      {
+        type: 'profile',
+        id: 'mine.profile',
+        name: '王秀兰',
+        badge: '已实名认证',
+        meta: ['身份证 3501********0023', '福州市鼓楼区 · 低保在册对象'],
+        stats: [
+          { label: '办件', value: '2' },
+          { label: '材料', value: '4' },
+          { label: '家人代办', value: '1' },
+        ],
+      },
+      { type: 'text', id: 'mine.todo.title', title: '我的办件', paragraphs: [] },
+      {
+        type: 'list',
+        id: 'mine.todo',
+        items: [
+          c('mine.item.dibao', '最低生活保障对象定期复核', 'listItem', '待提交 · 11月30日截止'),
+          c('mine.item.elder', '高龄老人津贴申请', 'listItem', '审核中 · 已提交 3 天'),
+        ],
+      },
+      { type: 'text', id: 'mine.docs.title', title: '我的材料', paragraphs: [] },
+      {
+        type: 'list',
+        id: 'mine.docs',
+        items: [
+          c('mine.doc.idcard', '居民身份证', 'listItem', '已核验 · 有效期至 2032-06'),
+          c('mine.doc.hukou', '户口簿', 'listItem', '已上传'),
+          c('mine.doc.dibao', '低保证明', 'listItem', '已上传 · 由民政局开具'),
+          c('mine.doc.bank', '本人银行卡', 'listItem', '已绑定 · 尾号 6621'),
+        ],
+      },
+      { type: 'text', id: 'mine.family.title', title: '家人代办', paragraphs: [] },
+      {
+        type: 'list',
+        id: 'mine.family',
+        items: [c('mine.family.daughter', '女儿 王丽', 'listItem', '已授权代办 · 可代查办件进度')],
+      },
+      {
+        type: 'actions',
+        id: 'mine.actions',
+        items: [c('mine.action.font', '字体调大', 'link'), c('mine.action.help', '联系客服', 'link')],
+      },
+      { type: 'notice', id: 'mine.notice', tone: 'warn', text: '您的低保证明将于 12 月 31 日到期，到期前可在「我的材料」里重新上传。' },
+    ],
+    tabs: [c('tab.index', '首页', 'tab'), c('tab.service', '服务', 'tab'), c('tab.mine', '我的', 'tab')],
+    traps: [],
+  },
+
+  /* ─────────── 教育服务列表 ─────────── */
+  'gov.edu.list': {
+    id: 'gov.edu.list',
+    app: '政务服务平台',
+    title: '教育服务',
+    semantics: '教育服务事项列表，按学段与办事类型排列，含入学报名、学籍、助学贷款等，共 8 项。',
+    blocks: [
+      { type: 'search', id: 'edu.search', placeholder: '在教育服务中搜索' },
+      {
+        type: 'list',
+        id: 'edu.list',
+        items: [
+          c('edu.item.enroll', '义务教育入学报名', 'listItem', '每年 5—7 月，按学区报名'),
+          c('edu.item.student', '学籍信息查询', 'listItem', '需学生本人实名'),
+          c('edu.item.loan', '生源地助学贷款', 'listItem', '学生与共同借款人需到场'),
+          c('edu.item.aid', '学生资助申请', 'listItem', '家庭经济困难学生'),
+          c('edu.item.teacher', '教师资格认定', 'listItem', '需普通话与考试成绩'),
+          c('edu.item.exam', '考试报名与成绩查询', 'listItem', '中考、高考、成人高考'),
+          c('edu.item.school', '学校与学区查询', 'listItem', '按地址查对口学校'),
+          c('edu.item.fee', '教育收费公示', 'listItem', '各学段收费标准'),
+        ],
+      },
+      { type: 'notice', id: 'edu.notice', tone: 'info', text: '2026 年秋季入学报名将于 5 月 6 日开放，可提前在「我的材料」里准备好户口簿与房产证明。' },
+    ],
+    traps: [],
+  },
+
   'gov.civil.list': {
     id: 'gov.civil.list',
     app: '政务服务平台',

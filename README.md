@@ -62,7 +62,7 @@ npm run build && npm start
 ```bash
 npm run lint        # ESLint（含 no-explicit-any、类型导入一致性）
 npm run typecheck   # 前后端两套 tsconfig，strict + noUncheckedIndexedAccess
-npm run test        # Vitest：90 项，覆盖护栏、规则引擎、契约、编排、AI 规划校验、相关性拒排、熔断降级、限流、无障碍、内存上限、埋点轮转
+npm run test        # Vitest：106 项，覆盖护栏、规则引擎、契约、编排、AI 规划校验、相关性拒排、提问识别与问答过滤、屏幕与导航一致性、熔断降级、限流、无障碍、内存上限、埋点轮转
 npm run smoke       # 端到端：意图→引导→纠偏→护栏→救援→完成（需先启动服务）
 node scripts/capture.mjs  # 用无头浏览器走完流程并逐屏出图
 npm run launch -- --check # 启动器自检：环境、构建产物新鲜度、端口占用，不启动服务

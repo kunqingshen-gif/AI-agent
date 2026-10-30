@@ -352,7 +352,7 @@ describe('编排层：未收录事项走 AI 现场规划', () => {
     const result = await service.interpret(session.id, '我要办个说不清的事');
     expect(result.ok).toBe(false);
     expect(result.intent).toBeNull();
-    expect(result.message).toContain('还没学会');
+    expect(result.message).toContain('答不上来');
 
     const summary = await telemetry.summary();
     expect(summary['plan.rejected']).toBe(1);

@@ -61,7 +61,12 @@ export class DashScopeLlm implements LlmPort {
       throw new LlmError(`模型通道熔断中（${this.lastError ?? 'unknown'}）`, 'disabled');
     }
 
-    const attempts = this.config.maxRetries + 1;
+    /*
+     * 尽力而为的调用（问答、现场规划）多给一次重试：
+     * 实测本机经代理出网时，首个连接偶发 fetch failed（约 10s），第二次即成功。
+     * 这类失败与模型服务无关，不该让用户白等一顿还没答案。
+     */
+    const attempts = this.config.maxRetries + 1 + (req.bestEffort ? 1 : 0);
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= attempts; attempt += 1) {

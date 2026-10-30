@@ -52,6 +52,39 @@ export function sanitizeAssistantText(candidate: string | undefined, fallback: s
   return { text, rejected: false };
 }
 
+/**
+ * 问答通道的文案过滤。
+ *
+ * 与引导话术不同，回答里**允许**出现「转账」「验证码」这类词——反诈提醒本来就要说这些。
+ * 所以这里不按词判，而按「危险的祈使句」判：让用户去转账、把验证码告诉别人、
+ * 点陌生链接、开屏幕共享，才拒绝。命中即整条作废，由知识库兜底答案顶上。
+ */
+const DANGEROUS_ANSWER_PATTERNS: RegExp[] = [
+  /(请|马上|立即|现在|先)[^。！？]{0,8}(转账|汇款|打款|打钱)/,
+  /(把|将)[^。！？]{0,8}(验证码|密码)[^。！？]{0,8}(发|告诉|给|念|说)/,
+  /(点击|打开)[^。！？]{0,6}(链接|网址)/,
+  /(开启|打开)[^。！？]{0,4}(屏幕共享|远程控制)/,
+  /(下载|安装)[^。！？]{0,10}(App|app|软件)[^。！？]{0,10}(转账|汇款)/,
+];
+
+export function sanitizeAnswer(candidate: string | undefined, fallback: string, maxChars = 220): SanitizeResult {
+  const text = (candidate ?? '')
+    .replace(/\s*\n+\s*/g, ' ')
+    .replace(/^#+\s*/gm, '')
+    .trim();
+  if (!text) return { text: fallback, rejected: true, reason: 'empty' };
+  if (DANGEROUS_ANSWER_PATTERNS.some((re) => re.test(text))) {
+    return { text: fallback, rejected: true, reason: 'dangerous-instruction' };
+  }
+  if (text.length > maxChars) {
+    /* 超长不整条作废：截到最后一个完整句子，信息仍可用 */
+    const cut = text.slice(0, maxChars);
+    const lastStop = Math.max(cut.lastIndexOf('。'), cut.lastIndexOf('！'), cut.lastIndexOf('；'));
+    return { text: lastStop > 40 ? cut.slice(0, lastStop + 1) : `${cut}…`, rejected: false, reason: 'truncated' };
+  }
+  return { text, rejected: false };
+}
+
 /** 语音播报要更短，超过 40 字直接截断到第一个句号 */
 export function normalizeSpeak(text: string, fallback: string): string {
   const cleaned = text.replace(/[「」“”]/g, '').trim();

@@ -6,19 +6,22 @@ interface Props {
   loading: boolean;
   started: boolean;
   examples: string[];
+  /** 可以直接问的问题，与办事示例并列——让老人知道「问也行」 */
+  questions?: string[];
   onExample: (text: string) => void;
   onSpeak: () => void;
   onPrefill: () => void;
   onRescue: () => void;
 }
 
-export function GuideCard({ action, loading, started, examples, onExample, onSpeak, onPrefill, onRescue }: Props) {
+export function GuideCard({ action, loading, started, examples, questions = [], onExample, onSpeak, onPrefill, onRescue }: Props) {
   if (!started) {
     return (
       <section className="card card-welcome">
         <h2>说一句话，办成一件事</h2>
         <p className="muted">
-          老人不需要知道「在哪个 App 的第几层菜单」。说出要办的事，Agent 会读屏、拆步骤、一步步指到具体按钮上。
+          老人不需要知道「在哪个 App 的第几层菜单」。说出要办的事，Agent 会读屏、拆步骤、一步步指到具体按钮上；
+          不清楚的政策也能直接问，问完想办一句话就能接着办。
         </p>
         <div className="examples">
           {examples.map((text) => (
@@ -27,6 +30,18 @@ export function GuideCard({ action, loading, started, examples, onExample, onSpe
             </button>
           ))}
         </div>
+        {questions.length > 0 && (
+          <>
+            <p className="examples-label">或者直接问一句</p>
+            <div className="examples">
+              {questions.map((text) => (
+                <button key={text} className="example example-question" onClick={() => onExample(text)} type="button">
+                  「{text}」
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </section>
     );
   }

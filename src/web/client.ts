@@ -1,4 +1,4 @@
-import type { FlowId, GuideAction, Intent, ScreenId, SessionMetrics, SlotName, TaskId, UserProfile } from '@shared/types';
+import type { AnswerPayload, FlowId, GuideAction, Intent, ScreenId, SessionMetrics, SlotName, TaskId, UserProfile } from '@shared/types';
 
 const BASE = '';
 
@@ -23,10 +23,14 @@ export interface SessionResponse {
 
 export interface InterpretResponse {
   ok: boolean;
+  /** guide：要办事，进入逐屏引导；answer：在问知识，直接作答 */
+  mode: 'guide' | 'answer';
   intent: Intent | null;
   suggestions: FlowId[];
   message: string;
   source: 'llm' | 'rule' | 'none';
+  /** mode === 'answer' 时的回答内容 */
+  answer?: AnswerPayload;
   /** 事项未收录、由模型现场规划时才有；前端据此打「AI 现场规划」标 */
   planned?: {
     title: string;

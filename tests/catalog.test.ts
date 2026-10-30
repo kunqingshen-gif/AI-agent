@@ -109,3 +109,44 @@ describe('口语槽位抽取', () => {
     expect(extractSlotsByRule('帮我看看这个怎么办')).toEqual({});
   });
 });
+
+describe('屏幕库与导航一致性', () => {
+  it('每个屏幕声明的控件 id 都能被读取到', () => {
+    for (const screen of Object.values(SCREENS)) {
+      for (const block of screen.blocks) {
+        if (block.type === 'grid' || block.type === 'list' || block.type === 'actions' || block.type === 'dialog') {
+          for (const item of block.items) {
+            expect(controlExists(screen.id, item.id), `${screen.id}/${item.id}`).toBe(true);
+          }
+        }
+      }
+      for (const tab of screen.tabs ?? []) {
+        expect(controlExists(screen.id, tab.id), `${screen.id}/${tab.id}`).toBe(true);
+      }
+    }
+  });
+
+  it('首页「服务/我的」标签真的能跳到对应页面', async () => {
+    const { NAV, PARENT } = await import('../src/web/nav');
+    const { SCREEN_IDS } = await import('@shared/types');
+    const ids = new Set<string>(SCREEN_IDS);
+    for (const [controlId, target] of Object.entries(NAV)) {
+      expect(ids.has(target), `${controlId} 指向了不存在的屏幕 ${target}`).toBe(true);
+    }
+    for (const [from, to] of Object.entries(PARENT)) {
+      expect(ids.has(from), `PARENT 键不存在：${from}`).toBe(true);
+      expect(ids.has(to as string), `PARENT 值不存在：${to}`).toBe(true);
+    }
+    expect(NAV['tab.service']).toBe('gov.service');
+    expect(NAV['tab.mine']).toBe('gov.mine');
+    expect(NAV['tab.index']).toBe('gov.home');
+  });
+
+  it('新增的三屏都有底部标签与业务语义', () => {
+    for (const id of ['gov.service', 'gov.mine', 'gov.edu.list'] as const) {
+      const screen = SCREENS[id];
+      expect(screen.semantics.length).toBeGreaterThan(8);
+      if (id !== 'gov.edu.list') expect(screen.tabs?.length).toBe(3);
+    }
+  });
+});

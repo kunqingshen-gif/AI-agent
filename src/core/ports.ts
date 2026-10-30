@@ -54,7 +54,9 @@ export interface TelemetryEvent {
     /** 模型为未收录事项现场规划，并通过了契约校验 */
     | 'plan.created'
     /** 模型给出的计划被 schema 或屏幕契约拦下 */
-    | 'plan.rejected';
+    | 'plan.rejected'
+    /** 问答通道给出回答（source 区分模型作答与知识库兜底） */
+    | 'answer.served';
   sessionId: string;
   at: number;
   payload: Record<string, unknown>;

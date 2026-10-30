@@ -7,11 +7,27 @@ import type { ScreenId } from '@shared/types';
  * 我们只负责读屏与指路（见 docs/adr/0002）。
  */
 export const NAV: Record<string, ScreenId> = {
+  // 底部导航（三屏共用同一组标签 id，跳转互达）
+  'tab.index': 'gov.home',
+  'tab.service': 'gov.service',
+  'tab.mine': 'gov.mine',
+
   // 政务首页
   'home.grid.minzheng': 'gov.civil.list',
+  'home.grid.jiaoyu': 'gov.edu.list',
   'home.grid.yibao': 'wrong.insurance',
   'home.grid.shebao': 'pension.qualify.intro',
   'home.grid.gengduo': 'utility.bill',
+
+  // 服务大厅
+  'service.item.dibao-renew': 'civil.allowance.intro',
+  'service.item.pension': 'pension.qualify.intro',
+  'service.item.utility': 'utility.bill',
+  'service.grid.minzheng': 'gov.civil.list',
+  'service.grid.edu': 'gov.edu.list',
+
+  // 我的
+  'mine.item.dibao': 'civil.allowance.intro',
 
   // 民政服务列表
   'civil.item.dibao-renew': 'civil.allowance.intro',
@@ -45,6 +61,9 @@ export const NAV: Record<string, ScreenId> = {
 
 /** 头部返回箭头对应的上一级 */
 export const PARENT: Partial<Record<ScreenId, ScreenId>> = {
+  'gov.service': 'gov.home',
+  'gov.mine': 'gov.home',
+  'gov.edu.list': 'gov.home',
   'gov.civil.list': 'gov.home',
   'civil.allowance.intro': 'gov.civil.list',
   'civil.allowance.form': 'civil.allowance.intro',

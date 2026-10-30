@@ -124,6 +124,48 @@ describe('编排层：意图理解', () => {
     expect(service.getSession(session.id)?.flow).toBeNull();
   });
 
+  it('问知识时走问答通道，不强行拉进办理流程', async () => {
+    const { service, telemetry } = build(() =>
+      JSON.stringify({
+        answer: '教育服务是管上学相关事的一栏，入学报名、学籍查询、助学贷款都在里面。',
+        points: ['入学报名按学区', '查询学籍要先实名'],
+        relatedTaskId: null,
+        confidence: 0.9,
+      }),
+    );
+    const session = service.createSession();
+    const result = await service.interpret(session.id, '什么是教育服务');
+    expect(result.ok).toBe(true);
+    expect(result.mode).toBe('answer');
+    expect(result.intent).toBeNull();
+    expect(result.answer?.text).toContain('教育服务');
+    expect(result.answer?.source).toBe('llm');
+    /* 只回答，不许偷跑办理流程 */
+    expect(service.getSession(session.id)?.flow).toBeNull();
+    expect(telemetry.events.some((e) => e.type === 'answer.served')).toBe(true);
+  });
+
+  it('模型不可用时，知识库仍能回答常见问题', async () => {
+    const ctx = build(() => '{}');
+    ctx.llm.available = false;
+    const session = ctx.service.createSession();
+    const result = await ctx.service.interpret(session.id, '高龄津贴怎么申请');
+    expect(result.mode).toBe('answer');
+    expect(result.answer?.source).toBe('rule');
+    expect(result.answer?.relatedTaskId).toBeUndefined();
+    expect(result.answer?.text.length).toBeGreaterThan(20);
+  });
+
+  it('问答能带回可办事项，用户一句话即可转到办理', async () => {
+    const ctx = build(() =>
+      JSON.stringify({ answer: '低保复核是核对家庭收入和人口变化。', points: ['每半年一次'], relatedTaskId: 'allowance.renew' }),
+    );
+    const session = ctx.service.createSession();
+    const result = await ctx.service.interpret(session.id, '低保复核是什么意思');
+    expect(result.answer?.relatedTaskId).toBe('allowance.renew');
+    expect(result.suggestions).toContain('allowance.renew');
+  });
+
   it('模型嘴上说「不相关」却仍附带步骤时，按形状错误拒绝，不进入引导', async () => {
     const { service, telemetry } = build((req) =>
       req.system.includes('路径规划师')

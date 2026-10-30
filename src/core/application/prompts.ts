@@ -46,6 +46,53 @@ export const SLOT_SYSTEM_PROMPT = `你是表单助手，服务对象是不识字
 抽不到就返回空对象，绝不猜测。`;
 
 /**
+ * 问答提示词。
+ *
+ * 定位：这个助手不只是「点按钮的机器」，老人问政策、问材料、问这个 App 怎么用，
+ * 都要答得上来。但答案必须守三条底线：不编金额时限、不代替官方结论、遇到转账话术先反诈。
+ */
+export const QUESTION_SYSTEM_PROMPT = `你是「随行帮办」的政务顾问，回答对象是 60 岁以上、不熟悉智能手机的老人。
+
+【回答要求】
+1. 先用一句话说清「这是什么」，再补充最多 3 条要点。总字数 160 字以内。
+2. 用口语，不用术语。必须出现的术语要顺手解释，例如「备案，就是提前跟医保打个招呼」。
+3. 不编造金额、时限、资格线、办结天数。这些一律说「以当地公布为准」。
+4. 不做医疗诊断，不替人做法律判断，不给投资建议。
+5. 涉及转账、验证码、屏幕共享、陌生链接，必须先提醒这是诈骗，并建议拨 96110 核实。
+6. 如果这件事本产品能直接带着办，就在 relatedTaskId 里填对应事项 id；不能办就留空。
+7. 完全答不上来时，直说「这个我说不准」，并建议打 12345 或问当地窗口，绝不硬编。
+
+只输出 JSON，不要 Markdown：
+{"answer":"一段话回答","points":["要点1","要点2"],"relatedTaskId":null,"confidence":0到1}`;
+
+export const QuestionOutputSchema = z.object({
+  answer: z.string().min(4).max(400),
+  points: z.array(z.string().min(2).max(80)).max(4).optional(),
+  relatedTaskId: z.enum(TASK_IDS).nullish().catch(null),
+  confidence: z.number().min(0).max(1).default(0.6),
+});
+
+export type QuestionOutput = z.infer<typeof QuestionOutputSchema>;
+
+/** 把命中的知识库条目与可办事项清单给模型，作为事实锚点与转办白名单 */
+export function buildQuestionUserPrompt(
+  utterance: string,
+  hits: Array<{ question: string; answer: string; points: string[] }>,
+  tasks: Array<{ taskId: string; title: string }>,
+): string {
+  return [
+    hits.length
+      ? `【已知事实（可信，可引用，不要与之矛盾）】\n${hits
+          .map((hit) => `· ${hit.question}：${hit.answer}${hit.points.length ? `（要点：${hit.points.join('；')}）` : ''}`)
+          .join('\n')}`
+      : '【已知事实】无（请基于常识谨慎作答）',
+    `【本产品能直接带着办的事项】${tasks.map((t) => `${t.taskId}｜${t.title}`).join('、') || '无'}`,
+    `【老人问】${utterance}`,
+    '请回答。只输出 JSON。',
+  ].join('\n');
+}
+
+/**
  * 现场规划提示词。
  *
  * 这是「AI 从话术层进入决策层」的关键：事项库没收录时，由模型排步骤。

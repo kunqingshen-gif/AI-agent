@@ -143,9 +143,27 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [ok, intent, suggestions, message, source]
+                required: [ok, mode, intent, suggestions, message, source]
                 properties:
                   ok: { type: boolean }
+                  mode:
+                    type: string
+                    enum: [guide, answer]
+                    description: |
+                      guide＝进入办理引导；answer＝问答通道作答（此时 intent 为 null）。
+                  answer:
+                    type: object
+                    description: 仅 mode=answer 时出现
+                    properties:
+                      text: { type: string, description: 主体回答，口语，160 字以内 }
+                      points:
+                        type: array
+                        items: { type: string }
+                      relatedTaskId:
+                        type: string
+                        description: 这件事本产品能直接办时给出，前端提供「直接带着我办」
+                      source: { type: string, enum: [llm, rule] }
+                      latencyMs: { type: integer }
                   intent:
                     oneOf:
                       - $ref: '#/components/schemas/Intent'

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  AnswerPayload,
   AssistRequest,
   FlowId,
   GuideAction,
@@ -16,7 +17,8 @@ import type { LlmPort, TelemetryPort, ClockPort } from '../ports';
 import type { TaskFlow } from '../domain/catalog';
 import { TASK_FLOWS, TASK_LIST } from '../domain/catalog';
 import { activeNode, decide } from '../domain/guide-engine';
-import { normalizeSpeak, sanitizeAssistantText } from '../domain/guardrails';
+import { looksLikeQuestion, matchFaq } from '../domain/faq';
+import { normalizeSpeak, sanitizeAnswer, sanitizeAssistantText } from '../domain/guardrails';
 import { extractSlotsByRule, ruleIntent, topSuggestions } from '../domain/intent-rules';
 import { buildFlowFromPlan, type PlanValidation } from '../domain/plan';
 import {
@@ -26,10 +28,13 @@ import {
   IntentOutputSchema,
   PLAN_SYSTEM_PROMPT,
   PlanOutputSchema,
+  QUESTION_SYSTEM_PROMPT,
+  QuestionOutputSchema,
   SLOT_SYSTEM_PROMPT,
   SlotOutputSchema,
   buildGuideUserPrompt,
   buildPlanUserPrompt,
+  buildQuestionUserPrompt,
   buildSlotUserPrompt,
   extractJson,
   isKnownTask,
@@ -68,10 +73,18 @@ export interface SessionState {
 
 export interface InterpretResult {
   ok: boolean;
+  /**
+   * 两条并列通道：
+   *  - guide：用户要办事 → 进入逐屏引导；
+   *  - answer：用户在问知识（政策、材料、这个 App 怎么用）→ 直接回答，不强行拉进流程。
+   */
+  mode: 'guide' | 'answer';
   intent: Intent | null;
   suggestions: FlowId[];
   message: string;
   source: 'llm' | 'rule' | 'none';
+  /** mode === 'answer' 时的回答内容 */
+  answer?: AnswerPayload;
   /**
    * 本次是否为「AI 现场规划」。前端据此在复述行旁打标，
    * 让评委一眼看出这一条路径不是预置的，是模型当场排的。
@@ -198,6 +211,29 @@ export class AssistService {
     const session = this.requireSession(sessionId);
     const ruleBased = ruleIntent(utterance);
 
+    /*
+     * ⓪ 问答通道优先：用户是在问知识，不是在要你动手。
+     *
+     * 这一条解决的是「问正常问题没回答」的硬伤。判定放在规则匹配之前是有意的：
+     * 「低保复核要带什么材料」也命中了低保复核的关键词，但用户要的是答案不是流程。
+     * 答完给出 relatedTaskId，想办的话一句话就能接着办，两条通道由此打通。
+     */
+    if (looksLikeQuestion(utterance)) {
+      const answer = await this.answerQuestion(sessionId, utterance);
+      if (answer) {
+        return {
+          ok: true,
+          mode: 'answer',
+          intent: null,
+          suggestions: answer.relatedTaskId ? [answer.relatedTaskId] : [],
+          message: answer.text,
+          source: answer.source,
+          answer,
+        };
+      }
+      /* 答不上来也不能拦着不让办事：继续往下走，按办事请求再判断一次 */
+    }
+
     let intent: Intent | null = null;
     let source: InterpretResult['source'] = 'none';
     /** 已收录事项取 catalog；AI 规划的临时事项由规划结果携带 */
@@ -285,6 +321,7 @@ export class AssistService {
          */
         return {
           ok: false,
+          mode: 'guide',
           intent: null,
           suggestions: topSuggestions(utterance),
           message: '这句话我没听出要办什么事。您可以说「我要办低保复核」「养老金要认证」这样的话，或者从下面三件里选一件。',
@@ -296,9 +333,10 @@ export class AssistService {
     if (!intent || !flow) {
       return {
         ok: false,
+        mode: 'guide',
         intent: null,
         suggestions: topSuggestions(utterance),
-        message: '这件事我还没学会。您可以从下面三件里选一件，也可以说得再具体点——比如「我要办高龄津贴」。',
+        message: '这件事我暂时答不上来，也不敢乱指。您可以从下面三件里选一件先办着，或者说得再具体一点——比如「高龄津贴要什么条件」。',
         source,
       };
     }
@@ -329,11 +367,104 @@ export class AssistService {
 
     return {
       ok: true,
+      mode: 'guide',
       intent,
       suggestions: [intent.taskId],
       message: intent.restated,
       source,
       ...(planned ? { planned } : {}),
+    };
+  }
+
+  /**
+   * 问答通道。
+   *
+   * 顺序：模型（带知识库事实锚点）→ 知识库规则 → 答不上来返回 null。
+   * 这条链路的意义是：老人问「什么是教育服务」，不该得到「这件事我还没学会」。
+   * 但答得再好也不越界——不编金额时限、不代替官方结论、遇到转账话术先反诈。
+   */
+  private async answerQuestion(sessionId: string, utterance: string): Promise<AnswerPayload | null> {
+    const hits = matchFaq(utterance, 2);
+    const startedAt = this.clock.now();
+
+    if (this.llm.available) {
+      try {
+        const raw = await this.llm.complete(
+          {
+            system: QUESTION_SYSTEM_PROMPT,
+            user: buildQuestionUserPrompt(
+              utterance,
+              hits.map((hit) => ({ question: hit.question, answer: hit.answer, points: hit.points })),
+              TASK_LIST.map((task) => ({ taskId: task.taskId, title: task.title })),
+            ),
+            temperature: 0.3,
+            /* 160 字正文 + 3 条要点 + JSON 包装，500 token 会被截断成非法 JSON，
+               实测截断后只能回落知识库，等于白白多等 10 秒 */
+            maxTokens: 800,
+            /* 问答比改写重、比规划轻；首字冷启动可能到 8—10s，给 15s，失败不熔断主通道 */
+            timeoutMs: 15_000,
+            bestEffort: true,
+          },
+          sessionId,
+        );
+        const parsed = QuestionOutputSchema.safeParse(extractJson(raw));
+        if (parsed.success) {
+          const fallback = hits[0]?.answer ?? '这个我说不准，建议您打 12345 问一下。';
+          const clean = sanitizeAnswer(parsed.data.answer, fallback);
+          if (!clean.rejected || hits[0]) {
+            const latencyMs = this.clock.now() - startedAt;
+            const related = parsed.data.relatedTaskId && isKnownTask(parsed.data.relatedTaskId) ? parsed.data.relatedTaskId : hits[0]?.relatedTaskId;
+            this.telemetry.record({
+              type: 'answer.served',
+              sessionId,
+              at: this.clock.now(),
+              payload: {
+                source: 'llm',
+                rejected: clean.rejected,
+                reason: clean.reason,
+                relatedTaskId: related ?? null,
+                latencyMs,
+              },
+            });
+            return {
+              text: clean.text,
+              points: (parsed.data.points ?? []).slice(0, 3).map((point) => sanitizeAnswer(point, '').text).filter(Boolean),
+              ...(related ? { relatedTaskId: related } : {}),
+              source: 'llm',
+              latencyMs,
+            };
+          }
+        }
+        this.telemetry.record({
+          type: 'llm.fallback',
+          sessionId,
+          at: this.clock.now(),
+          payload: { stage: 'answer', error: 'invalid-or-unsafe-output' },
+        });
+      } catch (error) {
+        this.telemetry.record({
+          type: 'llm.fallback',
+          sessionId,
+          at: this.clock.now(),
+          payload: { stage: 'answer', error: String(error) },
+        });
+        this.logger.warn({ sessionId, err: String(error) }, '问答降级到知识库');
+      }
+    }
+
+    const hit = hits[0];
+    if (!hit) return null;
+    this.telemetry.record({
+      type: 'answer.served',
+      sessionId,
+      at: this.clock.now(),
+      payload: { source: 'rule', faqId: hit.id, relatedTaskId: hit.relatedTaskId ?? null },
+    });
+    return {
+      text: hit.answer,
+      points: hit.points.slice(0, 3),
+      ...(hit.relatedTaskId ? { relatedTaskId: hit.relatedTaskId } : {}),
+      source: 'rule',
     };
   }
 

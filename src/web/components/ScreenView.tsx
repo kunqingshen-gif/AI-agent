@@ -9,6 +9,8 @@ interface Props {
   onControl: (controlId: string) => void;
   onField: (fieldId: string) => void;
   onBack?: () => void;
+  /** 当前应高亮的底部标签 id（默认第一个） */
+  activeTabId?: string;
 }
 
 const TILE_COLORS = ['#2f6fd0', '#2c8f7a', '#b46a2c', '#8a5cb8', '#c04b52', '#1f7fae', '#5a7d2a', '#a2562f'];
@@ -44,7 +46,7 @@ function Target({ active, children }: { active: boolean; children: ReactNode }) 
   );
 }
 
-export function ScreenView({ screen, highlightId, values, errors, onControl, onField, onBack }: Props) {
+export function ScreenView({ screen, highlightId, values, errors, onControl, onField, onBack, activeTabId }: Props) {
   const isTarget = (id: string) => highlightId === id;
 
   const renderControl = (item: Control) => {
@@ -194,6 +196,35 @@ export function ScreenView({ screen, highlightId, values, errors, onControl, onF
             </div>
           </div>
         );
+      case 'profile':
+        return (
+          <div key={block.id} className="profile-card">
+            <div className="profile-head">
+              <span className="profile-avatar" aria-hidden="true">
+                {block.name.slice(0, 1)}
+              </span>
+              <span className="profile-id">
+                <span className="profile-name">
+                  {block.name}
+                  <span className="profile-badge">{block.badge}</span>
+                </span>
+                {block.meta.map((line) => (
+                  <span key={line} className="profile-meta">
+                    {line}
+                  </span>
+                ))}
+              </span>
+            </div>
+            <div className="profile-stats">
+              {block.stats.map((item) => (
+                <span key={item.label} className="profile-stat">
+                  <strong>{item.value}</strong>
+                  <em>{item.label}</em>
+                </span>
+              ))}
+            </div>
+          </div>
+        );
       case 'result':
         return (
           <div key={block.id} className="result">
@@ -231,11 +262,20 @@ export function ScreenView({ screen, highlightId, values, errors, onControl, onF
       <div className="app-body">{screen.blocks.map(renderBlock)}</div>
       {screen.tabs && (
         <div className="app-tabs">
-          {screen.tabs.map((tab, i) => (
-            <button key={tab.id} className={`tab ${i === 0 ? 'tab-active' : ''}`} onClick={() => onControl(tab.id)} type="button">
-              {tab.label}
-            </button>
-          ))}
+          {screen.tabs.map((tab, i) => {
+            const active = activeTabId ? tab.id === activeTabId : i === 0;
+            return (
+              <button
+                key={tab.id}
+                className={`tab ${active ? 'tab-active' : ''}`}
+                onClick={() => onControl(tab.id)}
+                type="button"
+                aria-current={active ? 'page' : undefined}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
