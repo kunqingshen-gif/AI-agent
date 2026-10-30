@@ -3,10 +3,11 @@ import type { AnswerPayload, GuideAction, Intent, ScreenId, SessionMetrics, Slot
 import { SCREENS } from '@shared/screens';
 import { api, type InterpretResponse, type MetaResponse, type SessionResponse } from './client';
 import { PARENT, TAB_OF, isBrowseControl, resolveTarget } from './nav';
+import { quickTasksFrom, type QuickTask } from './zero';
 import { GuardianSheet, type GuardianKind } from './components/GuardianSheet';
 import type { ToolPayload } from '@core/domain/tools';
 import type { CollabTicket } from '@core/domain/collab';
-import type { LifeEntry } from '@core/domain/lifecycle';
+import type { LifeEntry, LifeScan } from '@core/domain/lifecycle';
 import { getRecognition, speak, stopSpeaking } from './useSpeech';
 import { PhoneFrame } from './components/PhoneFrame';
 import { ScreenView } from './components/ScreenView';
@@ -101,11 +102,22 @@ export function App() {
    * 只在水费这种一周内到期的事情上开口，不天天弹——频繁提醒等于没提醒。
    */
   const [nudge, setNudge] = useState<LifeEntry | null>(null);
+  /**
+   * 起手页那三张卡不是示例，是刚扫出来的真实待办。
+   *
+   * 示例是「别人要办的事」，老人认不出自己属于哪一句；
+   * 扫出来的待办是「您自己的事」，一眼就能认出来。这是目录与管家最直白的差别。
+   */
+  const [scan, setScan] = useState<LifeScan | null>(null);
+  /** 说不清时的替代方案：不开口，点一件就行 */
+  const [askOpen, setAskOpen] = useState(false);
 
   const valuesRef = useRef<Record<string, string>>({});
   const attemptsRef = useRef(0);
   /** 引导请求序号：只用最后一次请求的结果，避免慢响应覆盖新状态 */
   const reqSeqRef = useRef(0);
+  /** 连续听不清的次数：老人对着手机喊三遍没人应，就会永久放弃 */
+  const micFailRef = useRef(0);
   useEffect(() => {
     valuesRef.current = values;
   }, [values]);
@@ -251,9 +263,11 @@ export function App() {
     let alive = true;
     api
       .lifecycle()
-      .then((scan) => {
-        const first = scan.entries[0];
-        if (alive && first && (first.urgency === 'urgent' || first.urgency === 'overdue')) setNudge(first);
+      .then((result) => {
+        if (!alive) return;
+        setScan(result);
+        const first = result.entries[0];
+        if (first && (first.urgency === 'urgent' || first.urgency === 'overdue')) setNudge(first);
       })
       .catch(() => undefined);
     return () => {
@@ -473,7 +487,9 @@ export function App() {
     (onText: (text: string) => void) => {
       const recognition = getRecognition();
       if (!recognition) {
-        setToast('这台设备不支持语音识别，请直接输入文字');
+        /* 设备没有语音能力，别让老人对着屏幕发愣——直接给他能点的事 */
+        setAskOpen(true);
+        setToast('这台手机听不了话，您点一下要办的事');
         return;
       }
       if (listening) {
@@ -489,11 +505,24 @@ export function App() {
           if (item) text += item[0].transcript;
         }
         setTranscript(text);
-        if (event.results[event.results.length - 1]?.isFinal) onText(text);
+        if (event.results[event.results.length - 1]?.isFinal) {
+          micFailRef.current = 0;
+          onText(text);
+        }
       };
       recognition.onerror = () => {
         setListening(false);
-        setToast('没听清楚，请再说一次或改用文字');
+        micFailRef.current += 1;
+        /*
+         * 第二次听不清就不再让他「再说一次」了。
+         * 对老人来说，说三遍没人听懂＝这个东西坏了；换成点选，路还通着。
+         */
+        if (micFailRef.current >= 2) {
+          setAskOpen(true);
+          setToast('没听清楚不要紧，您点一下就行');
+        } else {
+          setToast('没听清楚，请再说一次，或者点下面的事');
+        }
       };
       recognition.onend = () => setListening(false);
       recognition.start();
@@ -503,6 +532,13 @@ export function App() {
 
   const screen = useMemo(() => SCREENS[screenId], [screenId]);
   const started = Boolean(session && intent);
+
+  /**
+   * 起手页的「点一件您要办的事」。
+   *
+   * 不写死：这三张卡随扫描结果变，演示时一眼能看出它是刚看过一遍才给的。
+   */
+  const quickTasks = useMemo<QuickTask[]>(() => quickTasksFrom(scan), [scan]);
 
   /** 求助话术：带着上下文去求助，老人在电话里不用从头解释 */
   const helpScript = useMemo(() => {
@@ -537,7 +573,48 @@ export function App() {
 
       <main className="stage">
         <section className="phone-col">
-          <PhoneFrame caption={`${screen.app} · ${screen.title}`}>
+          <PhoneFrame
+            caption={`${screen.app} · ${screen.title}`}
+            overlay={
+              /*
+               * 说不清时的第二条路：不问「您想说什么」，直接问「是不是这一件」。
+               *
+               * 老人表达不出来，但认得出来。把开放题改成选择题，
+               * 这是唯一能让「不会用 AI」的人真正开始的办法。
+               */
+              askOpen ? (
+                <div className="ask-layer" role="dialog" aria-modal="true" aria-label="选一件要办的事">
+                  <div className="ask-card">
+                    <p className="ask-q">您要办的是哪一件？</p>
+                    <p className="ask-sub">点一下就行，不用说话</p>
+                    {quickTasks.length > 0 ? (
+                      <div className="ask-tasks">
+                        {quickTasks.map((task) => (
+                          <button
+                            key={task.label}
+                            className="ask-task"
+                            type="button"
+                            onClick={() => {
+                              setAskOpen(false);
+                              void say(task.utterance);
+                            }}
+                          >
+                            <span className="ask-task-label">{task.label}</span>
+                            <span className="ask-task-hint">{task.hint}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="ask-empty">稍等，我正在看您有什么事要办…</p>
+                    )}
+                    <button className="ask-cancel" type="button" onClick={() => setAskOpen(false)}>
+                      都不是，我自己说
+                    </button>
+                  </div>
+                </div>
+              ) : null
+            }
+          >
             <ScreenView
               screen={screen}
               highlightId={action?.targetControlId}
@@ -566,7 +643,7 @@ export function App() {
           )}
         </section>
 
-        <section className="console-col">
+        <section className="console-col" data-fresh={started ? undefined : 'true'}>
           {nudge && (
             <div className="nudge">
               <div className="nudge-text">
@@ -686,7 +763,9 @@ export function App() {
             started={started}
             examples={EXAMPLES}
             questions={QUESTION_EXAMPLES}
+            tasks={quickTasks}
             onExample={(text) => void say(text)}
+            onMic={() => startListening((text) => void say(text))}
             onSpeak={() => action && speak(action.instruction, true)}
             onPrefill={() => void applyPrefill()}
             onRescue={() => void onRescue()}

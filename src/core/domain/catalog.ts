@@ -345,10 +345,25 @@ const utilityFlow: TaskFlow = {
       intent: '进入更多服务',
       instruction: '点最后一个「更多服务」。',
       speak: '点更多服务。',
+      successScreen: 'gov.all',
+    },
+    {
+      /*
+       * 这一步以前是缺的：首页点「更多服务」落在全部服务长清单上，
+       * 而流程直接跳到了账单页，中间那一跳在界面上不存在——
+       * 于是「下一步」按钮在这里会断掉，老人只能自己在一长串里找。
+       */
+      id: 'u2',
+      screenId: 'gov.all',
+      targetControlId: 'gov.all.item.utility',
+      kind: 'tap',
+      intent: '在全部服务里找到「生活缴费」',
+      instruction: '找到「生活缴费」，点它。',
+      speak: '点生活缴费。',
       successScreen: 'utility.bill',
     },
     {
-      id: 'u2',
+      id: 'u3',
       screenId: 'utility.bill',
       targetControlId: 'bill.btn.pay',
       kind: 'human-confirm',
@@ -359,7 +374,7 @@ const utilityFlow: TaskFlow = {
       successScreen: 'utility.pay.confirm',
     },
     {
-      id: 'u3',
+      id: 'u4',
       screenId: 'utility.pay.confirm',
       targetControlId: 'pay.btn.confirm',
       kind: 'human-confirm',
@@ -370,7 +385,7 @@ const utilityFlow: TaskFlow = {
       successScreen: 'utility.done',
     },
     {
-      id: 'u4',
+      id: 'u5',
       screenId: 'utility.done',
       kind: 'read',
       intent: '播报缴费结果',

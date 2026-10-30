@@ -17,6 +17,35 @@ interface Props {
 
 const TILE_COLORS = ['#2f6fd0', '#2c8f7a', '#b46a2c', '#8a5cb8', '#c04b52', '#1f7fae', '#5a7d2a', '#a2562f'];
 
+/**
+ * 在当前屏幕里查一个控件（或表单格）的中文名。
+ *
+ * 「下一步」条上要写「点「社保服务」」，而不是「点第 3 个图标」——
+ * 老人认名字，不认位置。
+ */
+function findLabel(screen: ScreenModel, id: string): string | null {
+  for (const block of screen.blocks) {
+    if (block.type === 'grid' || block.type === 'list' || block.type === 'actions') {
+      const hit = block.items.find((item) => item.id === id);
+      if (hit) return hit.label;
+    }
+    if (block.type === 'dialog') {
+      const hit = block.items.find((item) => item.id === id);
+      if (hit) return hit.label;
+    }
+    if (block.type === 'form') {
+      const hit = block.fields.find((field) => field.id === id);
+      if (hit) return hit.label;
+    }
+  }
+  return null;
+}
+
+/** 目标是不是一格表单——是的话要打开填写器，而不是「点」它 */
+function isFormField(screen: ScreenModel, id: string): boolean {
+  return screen.blocks.some((block) => block.type === 'form' && block.fields.some((field) => field.id === id));
+}
+
 function Chevron() {
   return (
     <svg width="10" height="16" viewBox="0 0 10 16" aria-hidden="true">
@@ -264,6 +293,37 @@ export function ScreenView({ screen, highlightId, values, errors, onControl, onF
         </span>
       </div>
       <div className="app-body">{screen.blocks.map(renderBlock)}</div>
+      {/*
+        * 「下一步」条——整套适老设计里最关键的一处。
+        *
+        * 老人真正的难点不是不会点，是**找不到该点哪个**。高亮环解决了一部分，
+        * 但高亮的目标可能在小屏下半截、可能是第九个图标，老人还是要找。
+        * 所以这里把那个目标复制成一个固定位置的大按钮：位置永远不变，
+        * 老人只需要学会「按最下面那个大按钮」——这件事不用学。
+        *
+        * 弹窗页不挂这条：弹窗自己有两个大按钮，再挂一条会打架。
+        */}
+      {(() => {
+        if (!highlightId) return null;
+        if (screen.blocks.some((block) => block.type === 'dialog')) return null;
+        const label = findLabel(screen, highlightId);
+        if (!label) return null;
+        const field = isFormField(screen, highlightId);
+        return (
+          <div className="next-bar">
+            <button
+              className="next-btn"
+              type="button"
+              onClick={() => (field ? onField(highlightId) : onControl(highlightId))}
+            >
+              <span className="next-btn-what">{field ? `填「${label}」` : `点「${label}」`}</span>
+              <span className="next-btn-go" aria-hidden="true">
+                下一步 →
+              </span>
+            </button>
+          </div>
+        );
+      })()}
       {screen.tabs && (
         <div className="app-tabs">
           {screen.tabs.map((tab, i) => {

@@ -778,6 +778,36 @@ input {
   min-width: 0;
 }
 
+/*
+ * 还没开始办的时候，把起手页提到输入框前面。
+ *
+ * 老人第一次打开，第一眼看到的不该是「请说出您要办的事」这种要他会做什么的提示，
+ * 而该是「您不用学，我带着您办」。输入框降级成第二选择，并明说它是给谁用的。
+ */
+.console-col[data-fresh='true'] .card-welcome {
+  order: 0;
+}
+
+.console-col[data-fresh='true'] .say-box {
+  order: 1;
+}
+
+/*
+ * 还没开始办，就没有「决策轨迹」可言，那张空卡片只会把打字入口挤到屏幕外。
+ * 老人第一次打开时看见的每一样东西都该有用。
+ */
+.console-col[data-fresh='true'] .trace {
+  display: none;
+}
+
+.console-col[data-fresh='true'] .say-box::before {
+  content: '会用手机的，也可以直接打字问我';
+  display: block;
+  margin-bottom: 7px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
 .say-box {
   background: #fff;
   border: 1px solid var(--line);
@@ -2617,4 +2647,284 @@ input {
 
 .nudge-go:hover {
   background: #9c5a22;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   零学习成本三件套
+   ───────────────────────────────────────────────────────────────────
+   老人用不好 AI 办事平台，不是因为功能少，而是四道坎：
+   不知道说什么、说不清、找不到、怕点错。下面三块各拆一道坎。
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ─── ① 起手页：一个大按钮，不给第二个选择 ─── */
+
+.welcome-sub {
+  margin: 0 0 16px;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+
+.welcome-mic {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 20px 18px;
+  border: none;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #2f7ce0, var(--blue));
+  color: #fff;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  box-shadow: 0 8px 20px rgba(26, 107, 214, 0.28);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.welcome-mic:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(26, 107, 214, 0.34);
+}
+
+.welcome-mic:active {
+  transform: translateY(1px) scale(0.995);
+}
+
+.welcome-mic-text {
+  letter-spacing: 1px;
+}
+
+.welcome-or {
+  margin: 18px 0 10px;
+  font-size: 13.5px;
+  color: var(--ink-3);
+}
+
+.welcome-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.welcome-task {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  padding: 13px 16px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--warn);
+  border-radius: 12px;
+  background: #fff;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.welcome-task:hover {
+  background: #fbfdff;
+  border-color: #c9dcf7;
+  border-left-color: var(--warn);
+}
+
+.welcome-task-label {
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.welcome-task-hint {
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+.welcome-why {
+  margin-top: 18px;
+  border-top: 1px dashed var(--line);
+  padding-top: 12px;
+}
+
+.welcome-why summary {
+  font-size: 13px;
+  color: var(--ink-3);
+  cursor: pointer;
+  list-style: none;
+}
+
+.welcome-why summary::-webkit-details-marker {
+  display: none;
+}
+
+.welcome-why summary::before {
+  content: '？';
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-size: 11px;
+  text-align: center;
+  line-height: 16px;
+}
+
+.welcome-why[open] summary {
+  margin-bottom: 10px;
+}
+
+/* ─── ② 下一步条：位置永远不变，老人只需要按同一个地方 ─── */
+
+.next-bar {
+  flex: 0 0 auto;
+  padding: 8px 12px 10px;
+  background: linear-gradient(180deg, rgba(247, 249, 252, 0) 0%, #f7f9fc 42%);
+}
+
+.next-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 18px;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #2f7ce0, var(--blue));
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(26, 107, 214, 0.3);
+  animation: next-breathe 2.6s ease-in-out infinite;
+}
+
+.next-btn-what {
+  font-size: 17px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.next-btn-go {
+  flex: none;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  white-space: nowrap;
+}
+
+@keyframes next-breathe {
+  0%,
+  100% {
+    box-shadow: 0 6px 16px rgba(26, 107, 214, 0.3);
+  }
+  50% {
+    box-shadow: 0 6px 22px rgba(26, 107, 214, 0.5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .next-btn {
+    animation: none;
+  }
+}
+
+/* ─── ③ 说不清就问「是不是这一件」 ─── */
+
+.ask-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 10px 12px;
+  background: rgba(10, 16, 24, 0.42);
+  border-radius: 36px;
+  animation: ask-fade 0.18s ease;
+}
+
+@keyframes ask-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.ask-card {
+  width: 100%;
+  background: #fff;
+  border-radius: 20px;
+  padding: 18px 16px 12px;
+  box-shadow: 0 20px 48px rgba(10, 16, 24, 0.3);
+}
+
+.ask-q {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.ask-sub {
+  margin: 4px 0 14px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.ask-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ask-task {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 13px 15px;
+  border: 1.5px solid #cfe0f8;
+  border-radius: 13px;
+  background: #f7fbff;
+}
+
+.ask-task:hover {
+  background: var(--blue-soft);
+  border-color: #a9c9f0;
+}
+
+.ask-task-label {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.ask-task-hint {
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+.ask-empty {
+  margin: 8px 0 12px;
+  font-size: 13.5px;
+  color: var(--ink-3);
+}
+
+.ask-cancel {
+  width: 100%;
+  margin-top: 12px;
+  padding: 9px;
+  border: none;
+  background: none;
+  color: var(--ink-3);
+  font-size: 13px;
+  text-decoration: underline;
 }

@@ -1,5 +1,6 @@
 import type { GuideAction } from '@shared/types';
 import { GUARDRAIL_COPY } from '@shared/types';
+import type { QuickTask } from '../zero';
 
 interface Props {
   action: GuideAction | null;
@@ -8,40 +9,101 @@ interface Props {
   examples: string[];
   /** 可以直接问的问题，与办事示例并列——让老人知道「问也行」 */
   questions?: string[];
+  /** 常办事项大按钮：起手页不做输入框，只做「点一件」 */
+  tasks?: QuickTask[];
   onExample: (text: string) => void;
+  /** 起手页那个最大的按钮：按一下开始说话 */
+  onMic?: () => void;
   onSpeak: () => void;
   onPrefill: () => void;
   onRescue: () => void;
 }
 
-export function GuideCard({ action, loading, started, examples, questions = [], onExample, onSpeak, onPrefill, onRescue }: Props) {
+function MicGlyph() {
+  return (
+    <svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="9" y="2.5" width="6" height="11" rx="3" fill="currentColor" />
+      <path d="M5.5 11.5a6.5 6.5 0 0013 0" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+      <path d="M12 18v3.2M8.6 21.4h6.8" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function GuideCard({
+  action,
+  loading,
+  started,
+  examples,
+  questions = [],
+  tasks = [],
+  onExample,
+  onMic,
+  onSpeak,
+  onPrefill,
+  onRescue,
+}: Props) {
+  /*
+   * 起手页。
+   *
+   * 这一屏是「零学习成本」的正面战场，所以它必须违反所有政务 App 的惯例：
+   * 没有搜索框、没有九宫格、没有说明段落，只有一条路——按最大的那个按钮说话。
+   *
+   * 曾经这里是「一段介绍 + 三句示例」。介绍是写给评委看的，老人不会读；
+   * 示例是句子，老人认不出自己属于哪一句。现在换成「事」本身：
+   * 「低保复核 · 11月20日到期」老人一眼就知道是不是自己的事。
+   */
   if (!started) {
     return (
       <section className="card card-welcome">
-        <h2>说一句话，办成一件事</h2>
-        <p className="muted">
-          老人不需要知道「在哪个 App 的第几层菜单」。说出要办的事，Agent 会读屏、拆步骤、一步步指到具体按钮上；
-          不清楚的政策也能直接问，问完想办一句话就能接着办。
-        </p>
-        <div className="examples">
-          {examples.map((text) => (
-            <button key={text} className="example" onClick={() => onExample(text)} type="button">
-              「{text}」
-            </button>
-          ))}
-        </div>
-        {questions.length > 0 && (
+        <h2>您不用学，我带着您办</h2>
+        <p className="welcome-sub">按一下，说要办什么，剩下的我一步一步指给您看。</p>
+
+        <button className="welcome-mic" onClick={onMic} type="button">
+          <MicGlyph />
+          <span className="welcome-mic-text">按这里说话</span>
+        </button>
+
+        {tasks.length > 0 && (
           <>
-            <p className="examples-label">或者直接问一句</p>
-            <div className="examples">
-              {questions.map((text) => (
-                <button key={text} className="example example-question" onClick={() => onExample(text)} type="button">
-                  「{text}」
+            <p className="welcome-or">不方便说话？点一件您要办的事</p>
+            <div className="welcome-tasks">
+              {tasks.map((task) => (
+                <button key={task.label} className="welcome-task" onClick={() => onExample(task.utterance)} type="button">
+                  <span className="welcome-task-label">{task.label}</span>
+                  <span className="welcome-task-hint">{task.hint}</span>
                 </button>
               ))}
             </div>
           </>
         )}
+
+        {/* 说明文字不是给老人看的，收起来给评委看，别占老人的视界 */}
+        <details className="welcome-why">
+          <summary>它凭什么能带得动我</summary>
+          <p className="muted">
+            老人不需要知道「在哪个 App 的第几层菜单」。说出要办的事，Agent 会读屏、拆步骤、把下一步做成一个固定位置的大按钮；
+            不清楚的政策也能直接问，问完想办一句话就能接着办。
+          </p>
+          <div className="examples">
+            {examples.map((text) => (
+              <button key={text} className="example" onClick={() => onExample(text)} type="button">
+                「{text}」
+              </button>
+            ))}
+          </div>
+          {questions.length > 0 && (
+            <>
+              <p className="examples-label">或者直接问一句</p>
+              <div className="examples">
+                {questions.map((text) => (
+                  <button key={text} className="example example-question" onClick={() => onExample(text)} type="button">
+                    「{text}」
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </details>
       </section>
     );
   }

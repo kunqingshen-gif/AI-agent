@@ -26,6 +26,9 @@ export const NAV: Record<string, ScreenId> = {
   'home.grid.shuiwu': 'topic.shuwu',
   'home.grid.gengduo': 'gov.all',
 
+  // 全部服务 · 生活缴费（水费流程从首页「更多服务」进来后要落在这里）
+  'gov.all.item.utility': 'utility.bill',
+
   // 服务大厅 · 我的常用
   'service.item.dibao-renew': 'civil.allowance.intro',
   'service.item.pension': 'pension.qualify.intro',

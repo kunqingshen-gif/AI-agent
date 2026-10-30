@@ -505,6 +505,7 @@ const TOPIC_SPECS = [
     semantics: '全部服务总入口，按主题分组的完整清单，含社会救助、社会保险、医保、户籍、教育、公积金、税务，并可直接进入四条已接入流程。',
     lead: '按主题找',
     items: [
+      { key: 'utility', label: '生活缴费', hint: '水费、电费、燃气 · 可在线缴纳' },
       { key: 'minzheng', label: '民政与救助', hint: '低保、特困、临时救助、高龄津贴' },
       { key: 'shebao', label: '社会保险', hint: '养老、工伤、失业、社保卡' },
       { key: 'yibao', label: '医疗保险', hint: '参保、异地就医、报销' },

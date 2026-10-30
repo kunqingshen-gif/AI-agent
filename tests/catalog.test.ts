@@ -150,3 +150,40 @@ describe('屏幕库与导航一致性', () => {
     }
   });
 });
+
+/**
+ * 链路自洽：每一步的落点，必须正好是下一步的起点。
+ *
+ * 这条曾经是坏的：水费流程从首页点「更多服务」后落点写的是账单页，
+ * 而下一个节点的起点是「全部服务」——界面上那一跳根本不存在。
+ * 后果不是报错，是「下一步」按钮走到第二步就断了，
+ * 老人只能自己在一长串服务里翻。现在写进测试，谁改流程都得让两头对上。
+ */
+describe('引导链路接得上', () => {
+  const flows = Object.values(TASK_FLOWS);
+
+  it('每个节点的落点就是下一节点的起点', () => {
+    for (const flow of flows) {
+      flow.nodes.forEach((node, i) => {
+        const next = flow.nodes[i + 1];
+        if (!next) return;
+        expect(
+          node.successScreen,
+          `${flow.taskId}/${node.id} 落到 ${node.successScreen}，下一步却从 ${next.screenId} 开始`,
+        ).toBe(next.screenId);
+      });
+    }
+  });
+
+  it('每个节点的目标控件都真实存在', () => {
+    for (const flow of flows) {
+      for (const node of flow.nodes) {
+        if (!node.targetControlId) continue;
+        expect(
+          controlExists(node.screenId, node.targetControlId),
+          `${flow.taskId}/${node.id} 指向了不存在的 ${node.targetControlId}`,
+        ).toBe(true);
+      }
+    }
+  });
+});
