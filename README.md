@@ -218,6 +218,8 @@ scripts/              launch.mjs（桌面启动器）、smoke.ts（端到端验�
 | `docs/api/openapi.yaml` | 接口契约（OpenAPI 3.1） |
 | `docs/manual.html` / `docs/manual.pdf` | 参赛产品说明书（可打印） |
 | `docs/video-script.md` | 30 秒–3 分钟演示视频分镜脚本 |
+| `docs/landing-gap.md` | **落地差距清单**：五类差距、三道硬门槛、分期路径、五个必答问题 |
+| `docs/originality.md` | **原创性自查**：依赖与素材核验方法、借鉴边界（诚实版）、商标处理 |
 | `docs/launch-copy.md` | 快手发布文案与报名材料清单 |
 
 ---

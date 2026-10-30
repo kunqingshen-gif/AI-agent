@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import type { Control, ScreenBlock, ScreenModel } from '@shared/types';
+import { SightLine } from './SightLine';
 
 interface Props {
   screen: ScreenModel;
@@ -63,9 +64,15 @@ function SearchIcon() {
   );
 }
 
-function Target({ active, children }: { active: boolean; children: ReactNode }) {
+/**
+ * 包一层用于定位的容器。
+ *
+ * `data-cid` 是 Agent 视线的落点：`SightLine` 靠它现算坐标，
+ * 真机无障碍服务也靠同一套 id 语义（节点 bounds）——两边是对齐的。
+ */
+function Target({ cid, active, children }: { cid: string; active: boolean; children: ReactNode }) {
   return (
-    <div className={active ? 'target-wrap active' : 'target-wrap'}>
+    <div className={active ? 'target-wrap active' : 'target-wrap'} data-cid={cid}>
       {children}
       {/* 视觉提示，读屏用户由引导卡片里的 instruction 承担语义，避免重复朗读 */}
       {active && (
@@ -80,11 +87,27 @@ function Target({ active, children }: { active: boolean; children: ReactNode }) 
 export function ScreenView({ screen, highlightId, values, errors, onControl, onField, onBack, activeTabId, size = 'normal' }: Props) {
   const isTarget = (id: string) => highlightId === id;
 
+  /**
+   * Agent 这一屏读到了几个可操作入口。
+   *
+   * 数字不是为了好看：它对应真机无障碍服务里 `getChildCount()` 的结果。
+   * 未开始态显示这个数，等于告诉评委「它已经把这一屏拆完了」，
+   * 而不是在等一句咒语。
+   */
+  const controlCount = useMemo(() => {
+    let n = 0;
+    for (const block of screen.blocks) {
+      if (block.type === 'form') n += block.fields.length;
+      else if ('items' in block && Array.isArray(block.items)) n += block.items.length;
+    }
+    return n + (screen.tabs?.length ?? 0);
+  }, [screen]);
+
   const renderControl = (item: Control) => {
     if (item.role === 'icon') {
       const color = TILE_COLORS[(item.label.charCodeAt(0) + item.label.length) % TILE_COLORS.length] ?? '#2f6fd0';
       return (
-        <Target key={item.id} active={isTarget(item.id)}>
+        <Target key={item.id} cid={item.id} active={isTarget(item.id)}>
           <button className="tile" onClick={() => onControl(item.id)} type="button" aria-label={item.label}>
             <span className="tile-icon" style={{ background: color }} aria-hidden="true">
               {item.label.slice(0, 2)}
@@ -108,7 +131,7 @@ export function ScreenView({ screen, highlightId, values, errors, onControl, onF
       const destructive = ['解除', '注销', '删除', '取消', '不是我'].some((word) => item.label.includes(word));
       const primary = !destructive;
       return (
-        <Target key={item.id} active={isTarget(item.id)}>
+        <Target key={item.id} cid={item.id} active={isTarget(item.id)}>
           <button
             className={`btn ${primary ? 'btn-primary' : 'btn-ghost'} ${item.risky ? 'btn-risky' : ''}${destructive ? ' btn-destructive' : ''}`}
             onClick={() => onControl(item.id)}
@@ -123,7 +146,7 @@ export function ScreenView({ screen, highlightId, values, errors, onControl, onF
 
     if (item.role === 'link') {
       return (
-        <Target key={item.id} active={isTarget(item.id)}>
+        <Target key={item.id} cid={item.id} active={isTarget(item.id)}>
           <button className="link-btn" onClick={() => onControl(item.id)} type="button">
             {item.label}
           </button>
@@ -133,7 +156,7 @@ export function ScreenView({ screen, highlightId, values, errors, onControl, onF
 
     // listItem
     return (
-      <Target key={item.id} active={isTarget(item.id)}>
+      <Target key={item.id} cid={item.id} active={isTarget(item.id)}>
         <button
           className="list-row"
           onClick={() => onControl(item.id)}
@@ -190,7 +213,7 @@ export function ScreenView({ screen, highlightId, values, errors, onControl, onF
         return (
           <div key={block.id} className="form">
             {block.fields.map((field) => (
-              <Target key={field.id} active={isTarget(field.id)}>
+              <Target key={field.id} cid={field.id} active={isTarget(field.id)}>
                 <label className={`field ${errors[field.id] ? 'field-error' : ''}`}>
                   <span className="field-label">
                     {field.label}
@@ -293,6 +316,8 @@ export function ScreenView({ screen, highlightId, values, errors, onControl, onF
         </span>
       </div>
       <div className="app-body">{screen.blocks.map(renderBlock)}</div>
+      {/* Agent 的视线：看见哪、指着哪，画在屏幕上而不是写在文档里 */}
+      <SightLine targetId={highlightId} controlCount={controlCount} />
       {/*
         * 「下一步」条——整套适老设计里最关键的一处。
         *

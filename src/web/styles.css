@@ -2928,3 +2928,124 @@ input {
   font-size: 13px;
   text-decoration: underline;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Agent 的视线
+   ───────────────────────────────────────────────────────────────────
+   一般 AI 助手永远待在右边的对话框里：左边是人的世界，右边是 AI 的世界，
+   中间没有连接。评委看完只会说「一个会说话的搜索框」。
+
+   这套配色把两件事分开说清楚：
+     橙色脉冲环 = 「您点这里」（对老人说的，是动作）
+     蓝色三角   = 「我看见这里」（对评委说的，是证据）
+   两种颜色不许混用，否则老人分不清哪个是让他按的。
+   ═══════════════════════════════════════════════════════════════════ */
+
+.sight {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  color: var(--blue);
+}
+
+/* 右边缘的三角：指向当前目标的高度，表示「视线从系统层落在这里」 */
+.sight-marker {
+  position: absolute;
+  right: 0;
+  width: 0;
+  height: 0;
+  margin-top: -6px;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-right: 7px solid currentColor;
+  filter: drop-shadow(0 1px 3px rgba(26, 107, 214, 0.45));
+  animation: sight-in 0.24s ease;
+}
+
+@keyframes sight-in {
+  from {
+    opacity: 0;
+    transform: translateX(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.sight-tag {
+  position: absolute;
+  right: 10px;
+  transform: translateY(-50%);
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(26, 107, 214, 0.35);
+}
+
+/* 未开始态：贴在底部标签栏上方的待命条，说明「已经看懂了，等您开口」 */
+.sight-track {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 60px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  border: 1px solid #cfe0f8;
+  border-radius: 10px;
+  background: rgba(247, 251, 255, 0.94);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+
+.sight-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--blue);
+  box-shadow: 0 0 0 0 rgba(26, 107, 214, 0.42);
+  animation: sight-pulse 2s ease-out infinite;
+}
+
+@keyframes sight-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(26, 107, 214, 0.42);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(26, 107, 214, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(26, 107, 214, 0);
+  }
+}
+
+.sight-track-text {
+  font-size: 11px;
+  line-height: 1.4;
+  color: #2a5b96;
+  letter-spacing: 0.2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sight-marker,
+  .sight-dot {
+    animation: none;
+  }
+}
+
+.sight-lead {
+  position: absolute;
+  height: 0;
+  border-top: 1px dashed currentColor;
+  opacity: 0.5;
+}

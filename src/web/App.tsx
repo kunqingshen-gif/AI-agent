@@ -574,7 +574,8 @@ export function App() {
       <main className="stage">
         <section className="phone-col">
           <PhoneFrame
-            caption={`${screen.app} · ${screen.title}`}
+            /* 明确标注「模拟」：界面是仿真的，不冒充任何官方应用 */
+            caption={`${screen.title} ｜ 演示模拟界面，非真实应用`}
             overlay={
               /*
                * 说不清时的第二条路：不问「您想说什么」，直接问「是不是这一件」。
