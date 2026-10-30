@@ -1,0 +1,224 @@
+/**
+ * 随行帮办 · 共享契约层
+ *
+ * 本文件是前后端唯一的事实来源（single source of truth）：
+ *  - 服务的「屏幕模型」与前端渲染的「屏幕模型」是同一份数据结构，
+ *    因此 Agent 读到的控件与用户看到的控件天然一致。
+ *  - 生产环境中该结构由 Android AccessibilityService / 无障碍节点树映射而来，
+ *    演示环境由本地屏幕库提供，二者遵循同一接口，见 docs/adr/0002。
+ */
+
+/* ────────────────────────── 事项 ────────────────────────── */
+
+export const TASK_IDS = ['allowance.renew', 'pension.qualify', 'medical.filing', 'utility.pay'] as const;
+export type TaskId = (typeof TASK_IDS)[number];
+
+/* ────────────────────────── 屏幕 ────────────────────────── */
+
+export const SCREEN_IDS = [
+  'gov.home',
+  'gov.civil.list',
+  'civil.allowance.intro',
+  'civil.allowance.form',
+  'civil.allowance.face',
+  'civil.allowance.risk',
+  'civil.allowance.done',
+  'wrong.insurance',
+  'wrong.temp',
+  'pension.qualify.intro',
+  'pension.qualify.face',
+  'pension.qualify.done',
+  'medical.filing.form',
+  'medical.filing.done',
+  'utility.bill',
+  'utility.pay.confirm',
+  'utility.done',
+] as const;
+export type ScreenId = (typeof SCREEN_IDS)[number];
+
+export type ControlRole = 'button' | 'link' | 'input' | 'tab' | 'icon' | 'listItem';
+
+export interface Control {
+  /** 控件唯一标识，同一屏幕内唯一；Agent 只能指向已存在于此表的控件 */
+  id: string;
+  label: string;
+  role: ControlRole;
+  /** 补充说明，模拟无障碍节点的 contentDescription */
+  hint?: string;
+  /** 是否为「危险动作」候选（支付、授权、删除、提交实名信息） */
+  risky?: boolean;
+}
+
+export type ScreenBlock =
+  | { type: 'search'; id: string; placeholder: string }
+  | { type: 'grid'; id: string; columns: number; items: Control[] }
+  | { type: 'list'; id: string; items: Control[] }
+  | { type: 'text'; id: string; title?: string; paragraphs: string[] }
+  | { type: 'notice'; id: string; tone: 'info' | 'warn' | 'danger'; text: string }
+  | { type: 'form'; id: string; fields: FormField[] }
+  | { type: 'actions'; id: string; items: Control[] }
+  | { type: 'dialog'; id: string; title: string; text: string; items: Control[] }
+  | { type: 'result'; id: string; title: string; lines: string[] };
+
+export interface FormField {
+  id: string;
+  label: string;
+  placeholder?: string;
+  required?: boolean;
+  kind: 'text' | 'idcard' | 'phone' | 'number' | 'select' | 'upload';
+  /** 供 Agent 预填 / 校验的槽位名 */
+  slot?: SlotName;
+  options?: string[];
+}
+
+export interface ScreenModel {
+  id: ScreenId;
+  /** 所属应用，用于跨应用场景 */
+  app: '政务服务平台' | '医保服务平台' | '生活缴费';
+  title: string;
+  blocks: ScreenBlock[];
+  /** 底部导航 */
+  tabs?: Control[];
+  /** 该屏幕的「业务语义」，帮助 LLM 判断用户此刻位置 */
+  semantics: string;
+  /** 演示用的「一次性陷阱」：用户在此屏可能踩到的坑，用于评估迷路 */
+  traps?: string[];
+}
+
+/* ────────────────────────── 用户与意图 ────────────────────────── */
+
+export const SLOT_NAMES = ['name', 'idCard', 'phone', 'householdSize', 'monthlyIncome', 'region', 'visitCity', 'hospital'] as const;
+export type SlotName = (typeof SLOT_NAMES)[number];
+
+export interface UserProfile {
+  displayName: string;
+  age: number;
+  region: string;
+  /** 数字素养，决定话术密度与字号建议 */
+  digitalLiteracy: 'low' | 'medium' | 'high';
+  /** 是否独居（决定是否优先推荐子女代办 / 社区帮办） */
+  livingAlone: boolean;
+  /** 听觉是否受限（决定是否强制文字 + 震动替代语音） */
+  hearingImpaired?: boolean;
+  /** 常用方言，影响播报用词 */
+  dialect?: '普通话' | '闽南语' | '粤语' | '四川话';
+}
+
+export interface Intent {
+  taskId: TaskId;
+  confidence: number;
+  slots: Partial<Record<SlotName, string>>;
+  missingSlots: SlotName[];
+  urgency: 'normal' | 'urgent';
+  /** 面向用户的一句话复述，用于「先确认再动手」 */
+  restated: string;
+  source: 'llm' | 'rule';
+  rawUtterance: string;
+}
+
+/* ────────────────────────── 护栏 ────────────────────────── */
+
+export const GUARDRAIL_KINDS = ['payment', 'identity', 'biometric', 'captcha', 'legal-consent', 'sensitive-info'] as const;
+export type GuardrailKind = (typeof GUARDRAIL_KINDS)[number];
+
+export const GUARDRAIL_COPY: Record<GuardrailKind, { title: string; body: string }> = {
+  payment: {
+    title: '这一步涉及付钱，我不替您按',
+    body: '凡是需要付钱、输入密码、开通免密的操作，都必须由您本人看清楚金额和收款方后自己确认。',
+  },
+  identity: {
+    title: '这一步在提交您的身份信息',
+    body: '身份证号、银行卡号属于敏感信息，我不会替您输入，也不会读出来。请确认屏幕上是官方应用。',
+  },
+  biometric: {
+    title: '这一步需要您本人在场',
+    body: '人脸识别必须由本人完成，任何要求您对着镜头「点头、眨眼、读数字」并转账的，都是诈骗。',
+  },
+  captcha: {
+    title: '这一步是验证码',
+    body: '验证码只填在官方应用里。任何人通过电话、短信向您索要验证码，都不要给。',
+  },
+  'legal-consent': {
+    title: '这一步是授权协议',
+    body: '授权协议涉及您的权利，请让家人或窗口人员帮您逐条确认后再同意。',
+  },
+  'sensitive-info': {
+    title: '这一步涉及敏感信息',
+    body: '请确认周围没有陌生人，且屏幕未被他人共享。',
+  },
+};
+
+/* ────────────────────────── 引导动作 ────────────────────────── */
+
+export type ActionKind = 'tap' | 'input' | 'back' | 'read' | 'human-confirm' | 'handoff';
+
+export interface RescueHint {
+  triggered: boolean;
+  kind: 'wrong-screen' | 'stuck' | 'face-failed' | 'blocked' | 'none';
+  message: string;
+  /** 可直接念给窗口/热线听的话术 */
+  script?: string;
+}
+
+export interface GuideAction {
+  kind: ActionKind;
+  /** 目标控件，必须存在于当前屏幕模型 */
+  targetControlId?: string;
+  /** 面向用户的大字指令 */
+  instruction: string;
+  /** 语音播报文本（更口语，更短） */
+  speak: string;
+  guardrail?: GuardrailKind;
+  /** 当前步骤对应的表单控件 id（仅在填表节点出现） */
+  fieldId?: string;
+  /** 一键预填建议：来自用户档案或上次填报，减少真实操作步数 */
+  prefill?: { value: string; source: 'profile' | 'last-submission'; label: string };
+  /** 给评委/审计看的判断依据，体现「AI 为什么这么走」 */
+  reason: string;
+  confidence: number;
+  stepLabel: string;
+  progress: { index: number; total: number };
+  source: 'llm' | 'rule';
+  rescue: RescueHint;
+  latencyMs: number;
+}
+
+/* ────────────────────────── 会话与指标 ────────────────────────── */
+
+export interface SessionClock {
+  startedAt: number;
+  updatedAt: number;
+}
+
+export interface AssistRequest {
+  sessionId: string;
+  screenId: ScreenId;
+  /** 已填写的槽位值（由前端从表单同步，模拟无障碍读取） */
+  slots: Partial<Record<SlotName, string>>;
+  /** 用户在本屏已停留的交互次数，用于识别「反复乱点」 */
+  attemptsOnScreen: number;
+  /** 用户主动求助 */
+  asksForHelp: boolean;
+}
+
+export interface SessionMetrics {
+  stepsGuided: number;
+  wrongTurns: number;
+  guardrailsTriggered: number;
+  handoffs: number;
+  elapsedMs: number;
+  completed: boolean;
+  baselineSteps: number;
+  baselineMs: number;
+}
+
+export interface TaskSpecSummary {
+  taskId: TaskId;
+  title: string;
+  category: string;
+  hotkey: string;
+  requiredDocs: string[];
+  baselineSteps: number;
+  baselineMs: number;
+  pitfalls: string[];
+}

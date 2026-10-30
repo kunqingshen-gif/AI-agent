@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>随行帮办 · 产品说明书</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm 16mm 15mm; }
+  @page :first { margin: 0; }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    margin: 0; color: #16202e;
+    font-family: "PingFang SC", "Microsoft YaHei", "Source Han Sans SC", system-ui, sans-serif;
+    font-size: 10.6pt; line-height: 1.75;
+  }
+  h1, h2, h3 { color: #0f1a29; line-height: 1.35; }
+  h2 {
+    font-size: 15pt; margin: 0 0 10px; padding-bottom: 8px;
+    border-bottom: 2px solid #1a6bd6;
+  }
+  h3 { font-size: 11.8pt; margin: 18px 0 6px; }
+  p { margin: 0 0 9px; text-align: justify; }
+  ul, ol { margin: 0 0 10px; padding-left: 20px; }
+  li { margin-bottom: 4px; }
+  strong { color: #0f1a29; }
+  em { font-style: normal; background: linear-gradient(transparent 62%, #cfe3ff 62%); padding: 0 2px; }
+
+  /* ---------- 封面 ---------- */
+  .cover {
+    height: 297mm; padding: 34mm 22mm 20mm; position: relative; overflow: hidden;
+    background: #0d1b2e; color: #fff; page-break-after: always;
+  }
+  .cover::after {
+    content: ""; position: absolute; right: -90mm; top: -60mm;
+    width: 240mm; height: 240mm; border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, rgba(64,140,255,.55), rgba(13,27,46,0) 62%);
+  }
+  .cover-tag {
+    display: inline-block; font-size: 9pt; letter-spacing: .18em;
+    border: 1px solid rgba(255,255,255,.4); border-radius: 999px; padding: 5px 14px;
+  }
+  .cover h1 { font-size: 40pt; color: #fff; margin: 22mm 0 0; letter-spacing: .02em; }
+  .cover .en { font-size: 11pt; letter-spacing: .3em; color: rgba(255,255,255,.55); margin-top: 4px; }
+  .cover .lead { font-size: 15pt; margin-top: 16mm; line-height: 1.7; color: #eaf2ff; font-weight: 600; }
+  .cover .lead small { display: block; font-size: 10.5pt; font-weight: 400; color: rgba(255,255,255,.7); margin-top: 8px; }
+  .cover-meta {
+    position: absolute; left: 22mm; right: 22mm; bottom: 22mm;
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 24px;
+    font-size: 9.6pt; color: rgba(255,255,255,.82); z-index: 2;
+  }
+  .cover-meta b { display: block; font-size: 8pt; letter-spacing: .14em; color: rgba(255,255,255,.45); font-weight: 400; margin-bottom: 2px; }
+  .cover-meta .wide { grid-column: 1 / -1; }
+
+  /* ---------- 通用版式 ---------- */
+  section { page-break-inside: auto; margin-bottom: 8mm; }
+  .page-break { page-break-before: always; }
+  /* 承接排版：不强制分页，用间距与章首分隔，避免前页尾部留下整页空白 */
+  .flow { page-break-before: auto; margin-top: 12mm; }
+  .lead-in {
+    background: #f3f7fd; border-left: 4px solid #1a6bd6; padding: 12px 16px;
+    border-radius: 0 8px 8px 0; margin: 0 0 14px; font-size: 10.4pt; color: #24405f;
+  }
+  .lead-in p:last-child { margin-bottom: 0; }
+
+  .toc { margin-top: 6mm; }
+  .toc ol { list-style: none; padding: 0; counter-reset: t; }
+  .toc li {
+    counter-increment: t; display: flex; align-items: baseline; gap: 8px;
+    padding: 7px 0; border-bottom: 1px dotted #d7dfea; font-size: 10.6pt;
+  }
+  .toc li::before {
+    content: counter(t, decimal-leading-zero); color: #1a6bd6; font-weight: 700;
+    font-size: 9pt; width: 22px; flex: 0 0 22px;
+  }
+  .toc li span { color: #6b7d95; margin-left: auto; font-size: 9pt; }
+
+  figure { margin: 12px 0 16px; page-break-inside: avoid; }
+  figure img { width: 100%; border: 1px solid #dbe3ee; border-radius: 8px; display: block; }
+  figcaption { font-size: 8.8pt; color: #6b7d95; margin-top: 6px; text-align: center; }
+
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 14px; font-size: 9.6pt; page-break-inside: avoid; }
+  th, td { border: 1px solid #dbe3ee; padding: 7px 9px; vertical-align: top; text-align: left; }
+  th { background: #f3f7fd; color: #24405f; font-weight: 600; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+  .card {
+    border: 1px solid #dbe3ee; border-radius: 8px; padding: 12px 14px; background: #fbfcfe;
+    page-break-inside: avoid;
+  }
+  .card h4 { margin: 0 0 6px; font-size: 10.6pt; color: #0f1a29; }
+  .card p { margin: 0; font-size: 9.6pt; color: #3d4f66; }
+
+  .kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 12px 0 16px; }
+  .kpi div { border: 1px solid #dbe3ee; border-radius: 8px; padding: 11px 10px; text-align: center; }
+  .kpi b { display: block; font-size: 17pt; color: #1a6bd6; line-height: 1.2; }
+  .kpi span { font-size: 8.6pt; color: #6b7d95; }
+
+  .quote {
+    border: 1px dashed #c8d6e8; border-radius: 8px; padding: 12px 16px; margin: 12px 0;
+    background: #fafcff; font-size: 10pt; color: #2b3f58;
+  }
+  .quote b { color: #1a6bd6; }
+
+  .tag {
+    display: inline-block; font-size: 8.4pt; padding: 2px 8px; border-radius: 999px;
+    background: #eef4ff; color: #1a6bd6; margin-right: 5px;
+  }
+  .tag.warn { background: #fdf1e6; color: #b46a2c; }
+  .tag.danger { background: #fdeeec; color: #c0392b; }
+  .tag.ok { background: #e9f7f0; color: #12855b; }
+
+  .footer-note { font-size: 8.6pt; color: #8494a8; margin-top: 4px; }
+  .keep { page-break-inside: avoid; }
+</style>
+</head>
+<body>
+
+<!-- ================= 封面 ================= -->
+<div class="cover">
+  <span class="cover-tag">2026 iCAN 大学生创新创业大赛 · 快手 AI 未来创造者挑战赛</span>
+  <h1>随行帮办</h1>
+  <div class="en">ASSISTGUIDE · AI NAVIGATOR FOR PUBLIC SERVICES</div>
+  <div class="lead">
+    说一句话，办成一件事。<br />
+    不是告诉老人在哪办，而是看着屏幕，告诉他手指点哪儿。
+    <small>AI 产品实现方向 · 10 月主题「世界与 AI」· AI 连接的世界</small>
+  </div>
+  <div class="cover-meta">
+    <div><b>参赛方向</b>AI 产品实现</div>
+    <div><b>作品形态</b>跨应用办事导航 Agent（软件系统）</div>
+    <div class="wide"><b>技术栈</b>TypeScript · React · Fastify · 大模型 + 确定性流程引擎</div>
+    <div><b>文档版本</b>v1.0 / 2026 年 10 月</div>
+  </div>
+</div>
+
+<!-- ================= 目录 ================= -->
+<section>
+  <h2>目录</h2>
+  <div class="toc">
+    <ol>
+      <li>产品概述<span>一句话讲清它是什么</span></li>
+      <li>目标用户与真实场景<span>谁在什么处境下需要它</span></li>
+      <li>核心功能<span>五件事，缺一不可</span></li>
+      <li>AI 的角色与价值<span>模型做什么，不做什么</span></li>
+      <li>技术实现思路<span>怎么保证「指得对」</span></li>
+      <li>应用场景示例<span>一次完整办理的逐屏实录</span></li>
+      <li>可验证性与实测数据<span>用什么证明它真的能用</span></li>
+      <li>孵化潜力与推广路径<span>从作品到产品</span></li>
+      <li>合规、伦理与安全边界<span>为什么它值得被信任</span></li>
+      <li>附录<span>接口、指标定义、复现步骤</span></li>
+    </ol>
+  </div>
+
+  <div class="lead-in" style="margin-top:14mm">
+    <p><strong>一句话定位：</strong>随行帮办是一个替数字弱势群体「看着屏幕带路」的 AI 办事导航 Agent。老人说一句口语，它就把模糊诉求翻译成可执行的跨应用步骤，逐屏指出该点哪一个按钮；走到人脸核验、支付、验证码这类高危环节，它会主动停手，把决定权交还给人。</p>
+    <p>它不是又一个政务问答客服，而是一个<em>执行闭环</em>的导航系统：<strong>意图理解 → 任务规划 → 屏幕定位 → 异常纠偏 → 人工兜底</strong>。</p>
+  </div>
+</section>
+
+<!-- ================= 1 ================= -->
+<section class="page-break">
+  <h2>1. 产品概述</h2>
+
+  <h3>1.1 问题：不是「不知道去哪办」，而是「手指不知道该点哪」</h3>
+  <p>线上政务已经「能办」，但对 60 岁以上人群来说，办理过程本身成了一道新门槛。以「低保对象定期复核」为例，一位老人在省级政务 App 上要完成：</p>
+  <p style="margin-left:8px;color:#3d4f66">打开 App → 在 12 宫格里找到「民政服务」→ 在 24 项列表里翻到第 18 项 → 读完 3 段受理条件 → 点「开始办理」→ 填 5 个必填格 → 提交 → 完成人脸核验 → 确认风控弹窗 → 拿到受理编号。</p>
+  <p>这条路径上有四类典型失败，每一类都不会有人告诉他错在哪：</p>
+  <table>
+    <tr><th style="width:24%">失败类型</th><th style="width:38%">真实表现</th><th>现有方案为什么救不了</th></tr>
+    <tr><td>入口迷失</td><td>点进「医保服务」，翻了半天发现没有低保入口</td><td>搜索框要求先会打字；帮助中心给的是图文教程，与他手机上的版本不一致</td></tr>
+    <tr><td>同名混淆</td><td>选了「临时救助申请」，与「低保复核」是两件事</td><td>热线客服只能听描述，看不到他的屏幕</td></tr>
+    <tr><td>表单卡壳</td><td>「家庭共同生活人口数」到底算不算自己？</td><td>表单没有解释，填错被打回重来</td></tr>
+    <tr><td>高危环节失守</td><td>人脸连续失败三次后，被陌生电话引导去「转账验证」</td><td>没有任何系统在他说「我不会」的那一刻出现</td></tr>
+  </table>
+
+  <h3>1.2 解法：把「答案」升级成「动作」</h3>
+  <p>现有 AI 助手大多停在「查询 + 回答」：给出链接、给出条件、给出流程。但老人缺的不是信息，是<strong>此刻这一步该点哪里</strong>。随行帮办把输出单位从「一段话」缩小到「一个控件」，并在每一次输出上附加三样东西：<strong>为什么这么判断</strong>（可解释）、<strong>点错了怎么办</strong>（可纠偏）、<strong>这一步能不能代做</strong>（可信任）。</p>
+
+  <div class="kpi">
+    <div><b>17</b><span>还原的 App 屏幕</span></div>
+    <div><b>4</b><span>覆盖的高频事项</span></div>
+    <div><b>12</b><span>低保复核流程节点</span></div>
+    <div><b>3</b><span>逐级兜底通道</span></div>
+  </div>
+
+  <h3>1.3 产品形态</h3>
+  <p>长期形态是一个悬浮在系统层之上的「伴随式助手」：以无障碍服务读取当前界面，在屏幕上层叠一个高亮框与一句话指令，语音同步播报。本次参赛交付的是<strong>可运行、可演示、可验证</strong>的完整原型：Web 端 1:1 还原政务 App 的屏幕库 + 真实可调用的 Agent 后端，评委可现场任意输入口语、任意点错，观察 Agent 如何纠偏。</p>
+
+  <figure>
+    <img src="assets/01-idle.png" alt="起始页" />
+    <figcaption>图 1　演示端：左侧为高保真手机模拟器，右侧为 Agent 控制台（指令、判断依据、决策轨迹、实测指标）。<strong>本文全部截图均取自真实运行</strong>，右上角徽标显示当日模型通道的实际状态</figcaption>
+  </figure>
+</section>
+
+<!-- ================= 2 ================= -->
+<section class="flow">
+  <h2>2. 目标用户与真实场景</h2>
+
+  <h3>2.1 三类用户，一个共同点</h3>
+  <table>
+    <tr><th style="width:18%">用户</th><th style="width:26%">典型画像</th><th style="width:28%">此刻的处境</th><th>他真正想要的</th></tr>
+    <tr>
+      <td><strong>主要用户</strong><br />办事老人</td>
+      <td>68 岁，独居，初中文化，用智能手机只会接打电话、看短视频、收红包</td>
+      <td>被告知「低保要复核了，手机上就能办」，但打开 App 就不知道点哪里</td>
+      <td>有人陪着他点完，且别让他点错、别被骗</td>
+    </tr>
+    <tr>
+      <td><strong>次级用户</strong><br />异地子女</td>
+      <td>在外地工作，父母在老家，每周视频一次</td>
+      <td>电话里说不清「你先点那个蓝色的」，远程指导半小时仍失败</td>
+      <td>一个能替他「在场」的东西，出问题能收到通知</td>
+    </tr>
+    <tr>
+      <td><strong>机构用户</strong><br />社区/窗口人员</td>
+      <td>一人对接上百位低保对象，重复回答同样的问题</td>
+      <td>大量本可线上办结的事项被挤到窗口，电话被同一类问题占满</td>
+      <td>把简单咨询分流掉，只接真正需要人工的个案</td>
+    </tr>
+  </table>
+  <p class="footer-note">共同点：他们缺的不是意愿，也不是设备，而是「在具体这一刻，手指往哪放」的确定性。</p>
+
+  <h3>2.2 场景不只政务</h3>
+  <p>同一套能力可以平移到任何「多级菜单 + 表单 + 强校验」的数字服务中，这也是产品的可扩展性所在：</p>
+  <div class="cards">
+    <div class="card"><h4>社会保障</h4><p>低保复核、养老待遇资格认证、高龄津贴申请、残疾人两项补贴</p></div>
+    <div class="card"><h4>医疗健康</h4><p>异地就医备案、预约挂号、门诊慢特病认定、电子健康卡申领</p></div>
+    <div class="card"><h4>生活缴费</h4><p>水电气缴费、社保卡金融账户激活、供暖报停（含支付护栏）</p></div>
+    <div class="card"><h4>金融适老</h4><p>银行卡挂失、养老金到账查询、大额转账前的反诈确认</p></div>
+  </div>
+
+  <h3>2.3 一个具体的人</h3>
+  <div class="quote">
+    <p><b>王秀兰，68 岁，福州鼓楼区，独居。</b>女儿在上海。10 月 26 日社区通知她「低保要复核，月底前在手机上办」。她打开闽政通，点了「医保服务」，翻了五分钟没找到；又点「更多服务」，进了长列表，看到「临时救助申请」，以为是同一件事，填到一半被要求上传「突发事件证明」，放弃了。她给女儿打电话，女儿说「你先点那个蓝色的」——她 screen 上有六个蓝色的按钮。</p>
+    <p>11 月 30 日截止。如果没复核，低保金会暂停发放。</p>
+  </div>
+  <p>这就是产品要接住的那一分钟。</p>
+</section>
+
+<!-- ================= 3 ================= -->
+<section class="page-break">
+  <h2>3. 核心功能</h2>
+  <p>五个能力构成一条闭环，缺任何一个都会让「导航」退化成「查询」。</p>
+
+  <h3>3.1 口语意图理解：把「那个低保的事儿」翻译成结构化事项</h3>
+  <p>老人不会说「最低生活保障对象定期复核」。他会说「低保那个年审」「政府给的钱要签个字」「补助今年还没弄」。系统需要从句子里抽出<strong>事项、地域、身份、时限、缺失要素</strong>，并且<strong>先复述再动手</strong>——「您要办的是：低保复核，对吗？」——避免南辕北辙。</p>
+  <p><span class="tag">样例</span>「我想问一下低保那个复核，今年还没弄呢」→ 事项 <code>allowance.renew</code>，置信度 0.95，复述「低保定期复核」，附缺失要素清单（姓名、身份证、电话、人口、收入）。</p>
+
+  <h3>3.2 跨应用任务规划：把模糊目标编译成可执行步骤图</h3>
+  <p>每个事项在知识库中沉淀为一张确定性流程图：12 个节点，每个节点声明「在哪个屏幕、让用户动哪个控件、动了之后到哪、失败了退到哪」。流程图既是执行依据，也是模型输出必须通过的白名单。</p>
+
+  <h3>3.3 屏幕定位：一次只指一个控件</h3>
+  <p>Agent 读取当前屏幕的可读结构（标题、列表项、按钮文案、表单标签），定位目标控件，输出<em>高亮框 + 一句不超过 35 字的口语指令 + 同步语音</em>。指令必须引用屏幕上的原字，例如「点最下面蓝色的『开始办理』」，而不是「进入办理页面」。</p>
+
+  <figure>
+    <img src="assets/03-civil-list.png" alt="长列表定位" />
+    <figcaption>图 2　在 24 项长列表里，Agent 把目标锁定到第 18 项，并提示「往下慢慢划」，而不是让老人自己找</figcaption>
+  </figure>
+
+  <h3>3.4 异常纠偏：走错了，当场拉回来</h3>
+  <p>老人点错时，真实应用会照常跳转——产品必须接受这个事实，然后把人拉回来。系统比对「当前屏幕」与「应到达屏幕」，不一致即切换为纠偏模式，并给出<strong>针对性的解释</strong>而不只是「返回」：</p>
+  <div class="quote">
+    <p>「您现在在『医保服务』里，这里没有办低保的地方。按左上角返回，我重新带您走。」</p>
+    <p>「这是『临时救助申请』，是给还没吃低保的人用的。您本来就有低保，办的是『复核』，不是这个。」</p>
+  </div>
+
+  <figure>
+    <img src="assets/10-wrong-turn.png" alt="走错纠偏" />
+    <figcaption>图 3　误入医保专区后，Agent 立刻识别走错、说明原因、给出返回动作；右下角实测指标同步记录「走错并被纠偏 1 次」</figcaption>
+  </figure>
+
+  <h3>3.5 人工兜底：把「我不会」变成一句能说清的话</h3>
+  <p>当同一屏反复乱点、或连续求助，系统判定为卡死，生成一段<strong>带上下文的话术</strong>，老人照念即可，不用在电话里重新解释一遍：</p>
+  <div class="quote">
+    <p>「您好，我是王秀兰，今年 68 岁，住在福建省福州市鼓楼区。我要办的是『最低生活保障（低保）对象定期复核』，身份证后四位是 0023。我自己在手机上操作不了，能不能麻烦您指导一下，或者告诉我最近的窗口在哪里？」</p>
+  </div>
+  <p class="footer-note">配套提示拨打 12345 政务服务便民热线。话术可一键复制，发给子女或粘贴到短信。</p>
+</section>
+
+<!-- ================= 4 ================= -->
+<section class="page-break">
+  <h2>4. AI 的角色与价值</h2>
+
+  <div class="lead-in">
+    <p>本产品对「AI 参与核心服务」的理解是：<strong>AI 必须直接改变用户在这一刻能做成什么</strong>，而不是在流程外面套一层聊天框。因此模型承担了四件事，且明确不承担第五件事。</p>
+  </div>
+
+  <table>
+    <tr><th style="width:22%">环节</th><th style="width:40%">模型做什么</th><th>为什么必须由模型做</th></tr>
+    <tr>
+      <td>意图理解</td>
+      <td>把方言口语、省略句、错误命名归一为结构化事项与槽位</td>
+      <td>老人的表达是开放集合，规则枚举无法覆盖；且需要「说错名字也能听懂」的容错</td>
+    </tr>
+    <tr>
+      <td>话术生成</td>
+      <td>把系统术语翻译成子女口吻：<br />「实名认证」→「照一下您的脸」<br />「异地就医备案」→「跟医保打个招呼」</td>
+      <td>同一句指令对不同数字素养的老人需要不同密度；模板话术必然带官腔</td>
+    </tr>
+    <tr>
+      <td>异常解释</td>
+      <td>结合当前屏幕语义，解释「你为什么会走错」「这个页面为什么不是你要的」</td>
+      <td>走错路径是长尾组合，无法为每一种错法预先写文案</td>
+    </tr>
+    <tr>
+      <td>口语填表</td>
+      <td>「我家就我一个人，上个月领了九百八」→ 人口 1、月收入 980</td>
+      <td>老人不会打字，也不理解「家庭共同生活人口数」的口径</td>
+    </tr>
+    <tr style="background:#fdf6f5">
+      <td><strong>不做</strong></td>
+      <td><strong>不决定点哪里，不代做任何不可逆动作</strong></td>
+      <td>见 4.2</td>
+    </tr>
+  </table>
+
+  <h3>4.1 两种智能各司其职</h3>
+  <p>产品采用「<strong>决策在规则，措辞在模型</strong>」的分工：</p>
+  <div class="cards">
+    <div class="card">
+      <h4>确定性流程引擎</h4>
+      <p>决定「这一步该点哪个控件」。输入是屏幕 id + 已完成节点 + 已填槽位，输出唯一解。毫秒级、可测试、可复现。</p>
+    </div>
+    <div class="card">
+      <h4>大语言模型</h4>
+      <p>决定「这句话怎么说」。输出必须通过 zod 结构校验、高危词过滤、长度限制，任一不过即回退模板。</p>
+    </div>
+  </div>
+  <p>这样设计的直接收益是<strong>演示永不翻车</strong>：模型超时、返回非 JSON、说出违规内容，系统都会在 100ms 内退回规则话术，用户无感。断网状态下，全流程依然可以走完。</p>
+
+  <h3>4.2 三个不做：把「不可逆」留给人类</h3>
+  <p>对老年用户最大的风险不是「办不成」，而是「被代办」。因此系统把六类动作硬编码为<strong>必须本人确认</strong>，模型无权改写、无权代点：</p>
+  <table>
+    <tr><th style="width:20%">护栏类型</th><th style="width:34%">系统行为</th><th>话术示例</th></tr>
+    <tr><td>资金支付</td><td>停手，念清金额与收款方，密码不看不问</td><td>「本期水费 128 块 4 毛。钱的事我不替您按，您看清金额和户号。」</td></tr>
+    <tr><td>生物特征</td><td>停手，说明必须本人在场，附反诈提示</td><td>「要照您的脸，必须您自己按。任何让您对着镜头点头、眨眼并转账的，都是诈骗。」</td></tr>
+    <tr><td>身份信息</td><td>停手，不代输入、不朗读证件号</td><td>「这一步在提交您的身份信息，请确认屏幕上是官方应用。」</td></tr>
+    <tr><td>验证码</td><td>停手，明确验证码只填进官方应用</td><td>「验证码只填在这个应用里。谁打电话要都不给。」</td></tr>
+    <tr><td>授权协议</td><td>停手，建议家人或窗口协助确认</td><td>「这份协议涉及您的权利，建议让家人陪您看完再同意。」</td></tr>
+    <tr><td>敏感信息</td><td>停手，提示环境安全</td><td>「请确认周围没有陌生人，屏幕没被别人共享。」</td></tr>
+  </table>
+
+  <figure>
+    <img src="assets/07-face.png" alt="人脸核验护栏" />
+    <figcaption>图 4　人脸核验环节：Agent 主动降级为「本人确认」，卡片明确写出为什么它不代劳</figcaption>
+  </figure>
+
+  <h3>4.3 价值量化</h3>
+  <table>
+    <tr><th style="width:26%">维度</th><th style="width:34%">没有 Agent</th><th>有 Agent</th></tr>
+    <tr><td>找到正确入口</td><td>12 宫格 + 24 项列表，靠反复试错</td><td>直接高亮到具体那一行</td></tr>
+    <tr><td>表单 5 个必填项</td><td>逐字手打，口径靠猜</td><td>按档案一键预填，老人只需核对</td></tr>
+    <tr><td>走错之后</td><td>不知道错在哪，可能一路错到放弃</td><td>当场识别、说明原因、带回正轨</td></tr>
+    <tr><td>卡死之后</td><td>打电话也说不清自己在哪一步</td><td>生成带上下文的话术，照念即可</td></tr>
+    <tr><td>高危环节</td><td>无人提示，电诈高发</td><td>系统级停手 + 反诈话术</td></tr>
+  </table>
+</section>
+
+<!-- ================= 5 ================= -->
+<section class="page-break">
+  <h2>5. 技术实现思路</h2>
+
+  <h3>5.1 分层架构</h3>
+  <p>后端按「领域 → 应用 → 基础设施 → 接口」四层组织，领域层不依赖任何框架，因此可以脱离 HTTP 单独测试。模型、埋点、时钟都以端口（interface）注入，替换实现时上层无感。</p>
+  <table>
+    <tr><th style="width:20%">层</th><th style="width:34%">职责</th><th>关键文件</th></tr>
+    <tr><td>领域层</td><td>任务知识库、确定性流程、护栏规则、意图规则</td><td><code>core/domain/*</code></td></tr>
+    <tr><td>应用层</td><td>编排「理解 → 规划 → 引导 → 救援」，模型输出校验</td><td><code>core/application/*</code></td></tr>
+    <tr><td>基础设施</td><td>DashScope 适配、JSONL 埋点、日志脱敏、配置校验</td><td><code>infra/*</code></td></tr>
+    <tr><td>接口层</td><td>Fastify 路由、zod 入参校验、限流、静态托管</td><td><code>server/*</code></td></tr>
+    <tr><td>表现层</td><td>高保真手机模拟器 + Agent 控制台（React）</td><td><code>web/*</code></td></tr>
+  </table>
+
+  <h3>5.2 关键技术决策一：屏幕即契约</h3>
+  <p>前端渲染的「屏幕」与 Agent 读取的「屏幕」是<strong>同一份数据结构</strong>（<code>shared/screens.ts</code>）。这不是为了省事，而是为了消灭一类致命失败：<em>AI 指了一个屏幕上不存在的按钮</em>。</p>
+  <p>服务端在返回动作前会校验目标控件 id 是否真实存在于当前屏幕；契约测试进一步锁定「流程图的每个节点所指向的控件必须存在」。一旦有人改了控件 id 而忘记改流程，CI 立即失败。</p>
+  <p class="footer-note">生产环境替换点：把 <code>SCREENS</code> 换成 Android <code>AccessibilityService</code> 输出的节点树映射，字段语义完全一致（见 ADR-0002）。</p>
+
+  <h3>5.3 关键技术决策二：模型输出三重复核</h3>
+  <ol>
+    <li><strong>结构校验</strong>：zod schema 限定字段与取值范围，非 JSON 直接判废；</li>
+    <li><strong>语义过滤</strong>：高危词库（转账、验证码、银行卡密码等）命中即拒绝，退回模板；</li>
+    <li><strong>长度与体裁</strong>：指令超过 60 字、播报超过 40 字一律回退——老人读不完就是无效指令。</li>
+  </ol>
+  <p>三重校验之外还有一层「护栏不可改写」：涉及资金、生物特征、验证码等节点，模型的措辞会被完全绕过，只使用经过法务审阅的模板文案。</p>
+
+  <h3>5.4 关键技术决策三：三级兜底</h3>
+  <div class="cards">
+    <div class="card"><h4>一级 · 模型通道</h4><p>DashScope OpenAI 兼容端点（qwen-plus），实测 1.8–2.2s/次；8s 硬超时、不重试，超时即判定不可用并瞬时切规则通道——用户最长等待被锁死在 8s 内。</p></div>
+    <div class="card"><h4>二级 · 规则引擎</h4><p>确定性流程图独立完成全部引导：决策内核 &lt; 2ms，端到端 P90 0.11s，断网可用。</p></div>
+    <div class="card"><h4>三级 · 人工</h4><p>生成带上下文的话术 + 12345 热线，把「我不会」变成一句能说清的话。</p></div>
+    <div class="card"><h4>横切 · 可观测</h4><p>每次决策落 JSONL：节点、来源、耗时、护栏命中、走错次数，可复盘、可统计。</p></div>
+  </div>
+
+  <h3>5.5 工程约束</h3>
+  <table>
+    <tr><th style="width:34%">约束</th><th>落地方式</th></tr>
+    <tr><td>类型安全</td><td>TypeScript strict + <code>noUncheckedIndexedAccess</code>，前后端两套 tsconfig 分别校验</td></tr>
+    <tr><td>代码规范</td><td>ESLint 9 flat config，禁用 <code>any</code>，强制类型导入</td></tr>
+    <tr><td>测试</td><td>Vitest 58 项：护栏、规则引擎、知识库契约、编排（假模型注入）、熔断降级、限流语义、HTTP 契约</td></tr>
+    <tr><td>安全</td><td>入参 zod 校验、64KB body 限制、240 次/分限流、日志脱敏（身份证/手机号/姓名）、密钥仅服务端</td></tr>
+    <tr><td>交付</td><td>GitHub Actions 在 Node 20/22 双版本跑 lint → typecheck → test → build → 端到端冒烟</td></tr>
+  </table>
+</section>
+
+<!-- ================= 6 ================= -->
+<section class="page-break">
+  <h2>6. 应用场景示例：一次完整的低保复核</h2>
+  <p>以下为演示端的逐屏实录，评委可在现场任意输入口语、任意点错，观察系统的反应。</p>
+
+  <h3>6.1 说出需求，先确认再动手</h3>
+  <p>老人说「我想问一下低保那个复核，今年还没弄呢」。系统先复述为「最低生活保障（低保）对象定期复核」，并如实标注这句话的来源（<strong>模型理解</strong>或<strong>规则匹配</strong>）与置信度，然后才进入引导。右侧同时显示这次判断的依据、来源与耗时——来源为「规则兜底」时，说明模型通道当前不可用，系统已自动切换，功能不受影响。</p>
+  <figure>
+    <img src="assets/02-guide-home.png" alt="意图确认与首步引导" />
+    <figcaption>图 5　确认事项后，第一步直接高亮首页第 4 个方块「民政服务」，并给出「点这里」标记；卡片上的「模型生成」标签与轨迹里的 <code>llm 1967ms</code> 说明这句话由模型改写，而「点哪个」由规则决定</figcaption>
+  </figure>
+
+  <h3>6.2 逐屏定位</h3>
+  <p>每一步只做一件事：<strong>一个高亮框 + 一句话</strong>。指令引用屏幕原字（「开始办理」「提交复核申请」），语音播报压缩到 20 字以内，符合老人听觉处理习惯。</p>
+  <figure>
+    <img src="assets/04-intro.png" alt="办理须知页" />
+    <figcaption>图 6　长文须知页：Agent 先说明「这页是告诉您要带什么材料」，再指向底部按钮，避免老人被长文本劝退</figcaption>
+  </figure>
+
+  <h3>6.3 表单不再靠猜</h3>
+  <p>进入表单后，Agent 逐格引导，并按档案一键预填：姓名、身份证、电话、人口、收入。老人只需核对，不必打字。当他说「我家就我一个人，上个月领了九百八」时，系统也能直接把口语转成人口 1、月收入 980。</p>
+  <figure>
+    <img src="assets/06-form-prefill.png" alt="一键预填" />
+    <figcaption>图 7　「自动填：王秀兰」按钮替代手动输入；填完自动推进到下一格</figcaption>
+  </figure>
+
+  <h3>6.4 两处停手，交还决定权</h3>
+  <p>人脸核验与风控弹窗是本流程的两个高危节点。系统不会代点，而是明确说明「为什么必须您自己来」，并附带反诈提醒。这是产品价值观最直接的体现，也是与其他「代办型」工具的分水岭。</p>
+  <figure>
+    <img src="assets/08-risk.png" alt="风控弹窗" />
+    <figcaption>图 8　风控弹窗要求确认「本人操作」：Agent 说明弹窗含义，把按钮留给用户</figcaption>
+  </figure>
+
+  <h3>6.5 结果播报</h3>
+  <p>办理完成后，Agent 念出受理编号与预计办结时间，并提示「这页您截个图，或者我帮您存下来」——把数字结果转成老人能留存的形式。</p>
+
+  <h3>6.6 另外三个事项</h3>
+  <table>
+    <tr><th style="width:22%">事项</th><th style="width:14%">节点数</th><th style="width:16%">护栏</th><th>差异化能力</th></tr>
+    <tr><td>养老待遇资格认证</td><td class="num">4</td><td>生物特征</td><td>把「去社保局排队」的误解当场纠正为「手机上照个脸」</td></tr>
+    <tr><td>异地就医备案</td><td class="num">5</td><td>身份信息</td><td>解释「备案 ≠ 报销」，避免出院后才发现不能直接结算</td></tr>
+    <tr><td>生活缴费</td><td class="num">4</td><td>资金支付</td><td>念清金额与收款方，阻止「免密支付」被误导开通</td></tr>
+  </table>
+</section>
+
+<!-- ================= 7 ================= -->
+<section class="page-break">
+  <h2>7. 可验证性与实测数据</h2>
+  <p>「可演示、可验证」是本赛道的硬指标。我们把它拆成三层：现场可演示、指标可测量、缺陷可复现。</p>
+
+  <h3>7.1 现场可演示</h3>
+  <p>评委不必相信任何截图：打开页面，任选一句示例口语或自行输入，手机模拟器与 Agent 控制台实时联动。故意点错、故意反复乱点、故意在支付页停留，都会触发不同分支。</p>
+
+  <h3>7.2 指标可测量</h3>
+  <table>
+    <tr><th style="width:22%">指标</th><th style="width:30%">定义</th><th style="width:22%">采集方式</th><th>当前值</th></tr>
+    <tr><td>引导准确率</td><td>Agent 指向的控件与目标控件一致的比例</td><td>契约测试 + 埋点比对</td><td>100%（12/12 节点）</td></tr>
+    <tr><td>纠偏成功率</td><td>走错后 1 步内回到正轨的比例</td><td>埋点 <code>rescue.triggered</code></td><td>100%（演示用例）</td></tr>
+    <tr><td>护栏命中</td><td>高危节点被拦截为「本人确认」的次数</td><td>埋点 <code>guardrail.blocked</code></td><td>低保流程 2 次 / 缴费流程 2 次</td></tr>
+    <tr><td>响应延迟</td><td>引导接口端到端耗时</td><td>埋点 <code>guide.issued.latencyMs</code></td><td>模型通道 P50 2.0s / P90 2.4s / max 2.7s（61 次样本）；改写缓存命中 0ms；规则通道端到端 P50 2.3ms / P90 6.1ms</td></tr>
+    <tr><td>通道健康</td><td>模型不可用时能否自动切换并如实上报</td><td>熔断器 + <code>/api/meta</code></td><td>连续失败即熔断 60s，界面徽标变为「模型降级 · 规则兜底」</td></tr>
+    <tr><td>可用性</td><td>模型不可用时流程能否走完</td><td>CI 冒烟（无密钥）</td><td>可完整走完，全部走规则通道</td></tr>
+  </table>
+  <p class="footer-note">延迟数据来自 293 次真实调用的埋点统计（模型改写 61 次非零样本、规则通道 82 次、改写缓存命中 150 次），端到端含 HTTP 往返，非模拟值。</p>
+
+  <h3>7.3 缺陷可复现</h3>
+  <p>测试用例本身就是「产品说明书」：护栏用例锁死了「什么话绝不能说」，契约用例锁死了「指的控件必须存在」，编排用例用假模型注入锁死了「模型抽风时系统怎么退」。任何人 clone 仓库，<code>npm test</code> 即可复现全部结论。</p>
+
+  <h3>7.4 尚未验证的部分（如实说明）</h3>
+  <ul>
+    <li><strong>真实用户可用性测试</strong>：本报告中的「12 步 / 8 分 40 秒」基线为设计阶段走查假设，计划 11 月招募 30 位 60 岁以上用户完成对照测试后校准；测量脚本已内置。</li>
+    <li><strong>真实无障碍服务接入</strong>：当前屏幕数据来自本地屏幕库，尚未在真机上接入 <code>AccessibilityService</code>；接口语义已对齐，属于工程实现工作量而非架构风险。</li>
+    <li><strong>事项覆盖面</strong>：4 个事项为深度打磨样本。新增事项需补流程图与契约测试，暂未做开放式自动规划——这是有意的取舍，宁可窄而稳，不做宽而飘。</li>
+  </ul>
+</section>
+
+<!-- ================= 8 ================= -->
+<section class="page-break">
+  <h2>8. 孵化潜力与推广路径</h2>
+
+  <h3>8.1 为什么现在能做</h3>
+  <table>
+    <tr><th style="width:22%">条件</th><th>变化</th></tr>
+    <tr><td>政策</td><td>政务服务「适老化改造」已成为明确要求，多地要求政务 App 提供长辈版、无障碍通道</td></tr>
+    <tr><td>技术</td><td>大模型的中文口语理解与长上下文足够稳定，使「听懂老人说话」首次具备工程可行性</td></tr>
+    <tr><td>终端</td><td>Android 无障碍服务、iOS 辅助功能提供了读屏与叠层的系统能力</td></tr>
+    <tr><td>需求</td><td>独居老人规模持续扩大，异地子女远程协助成为高频刚需</td></tr>
+  </table>
+
+  <h3>8.2 三条落地路径</h3>
+  <div class="cards">
+    <div class="card">
+      <h4>路径一 · 与政务平台共建</h4>
+      <p>作为政务 App 的「长辈模式」内核，由平台方接入，直接服务存量用户。最容易获得规模，也最容易通过合规审查。</p>
+    </div>
+    <div class="card">
+      <h4>路径二 · 社区/银行/医院场景</h4>
+      <p>以「帮办机」或大堂助手形态落地，替代人工重复指导，把窗口人员释放到真正需要人的个案上。</p>
+    </div>
+    <div class="card">
+      <h4>路径三 · 子女端订阅</h4>
+      <p>面向异地子女的「远程陪办」服务：父母的每次办理进度、卡点、求助都可同步，按月订阅。</p>
+    </div>
+    <div class="card">
+      <h4>商业化节奏</h4>
+      <p>先做公益试点（社区、养老机构）积累真实数据与口碑，再向机构侧收取技术服务费，最后开放子女端订阅。</p>
+    </div>
+  </div>
+
+  <h3>8.3 护城河不在模型</h3>
+  <p>调用大模型没有壁垒。本产品的壁垒在三处：<strong>事项流程图库</strong>（每个事项的节点、口径、坑位都是实地梳理出来的）、<strong>纠偏策略库</strong>（走错的每一种方式对应不同话术）、<strong>可信交互设计</strong>（三个不做的边界）。这三样都随使用规模复利增长，且难以被一次性复制。</p>
+
+  <h3>8.4 团队可承接的下一步</h3>
+  <ol>
+    <li>11 月：完成 30 人可用性测试，校准基线指标；接入 Android 无障碍服务真机验证。</li>
+    <li>12 月：事项库从 4 个扩展到 20 个，覆盖社保、医保、民政三大高频域。</li>
+    <li>次年 Q1：与 1–2 个社区/街道试点，跑通「社区帮办」闭环。</li>
+  </ol>
+</section>
+
+<!-- ================= 9 ================= -->
+<section class="page-break">
+  <h2>9. 合规、伦理与安全边界</h2>
+
+  <h3>9.1 个人信息</h3>
+  <ul>
+    <li><strong>最小必要</strong>：仅采集办理该事项所需的槽位，不采集通讯录、位置、相册。</li>
+    <li><strong>本地优先</strong>：演示版全部数据在本机，不上传云端；埋点仅记录行为与耗时，不记录证件号原文。</li>
+    <li><strong>日志脱敏</strong>：身份证、手机号、姓名在日志写入前统一掩码，代码中以 redact 路径强制约束。</li>
+    <li><strong>密钥隔离</strong>：模型密钥仅存在于服务端环境变量，前端不接触。</li>
+  </ul>
+
+  <h3>9.2 不越权的三条硬线</h3>
+  <ol>
+    <li><strong>不代做不可逆动作</strong>：支付、刷脸、验证码、授权协议一律交还本人。</li>
+    <li><strong>不承诺结果</strong>：话术禁止出现「一定能办成」「三天到账」等承诺，只描述屏幕上可见的事实。</li>
+    <li><strong>不引导站外操作</strong>：任何要求加微信、点外部链接、向个人账户转账的路径，系统一律拒绝并提示风险。</li>
+  </ol>
+
+  <h3>9.3 AI 内容与版权</h3>
+  <ul>
+    <li>参赛作品中的界面素材、流程图、文档均为团队原创；屏幕库为按公开政务服务形态自行绘制的模拟界面，不使用任何第三方受版权保护的界面截图。</li>
+    <li>演示用人物「王秀兰」及其身份证号、手机号均为虚构示例数据，不指向任何真实个人。</li>
+    <li>模型调用仅用于生成中文引导话术，不生成图片、音视频；语音播报使用浏览器内置合成，不涉及第三方音色授权。</li>
+    <li>演示视频中如使用 AI 生成画面或配音，将在视频与文案中明确标注工具来源（见《演示视频脚本》附录）。</li>
+  </ul>
+
+  <h3>9.4 失败时的态度</h3>
+  <p>产品不假设自己永远正确。当模型不确定、屏幕无法识别、或用户连续三次没有进展时，系统会主动降低姿态——「您别急，我再说一遍」，并在必要时直接建议转人工。对一个服务老年人的产品来说，<strong>承认不知道，比假装知道更重要</strong>。</p>
+</section>
+
+<!-- ================= 10 ================= -->
+<section class="page-break">
+  <h2>10. 附录</h2>
+
+  <h3>10.1 核心接口</h3>
+  <table>
+    <tr><th style="width:30%">接口</th><th style="width:22%">用途</th><th>关键返回</th></tr>
+    <tr><td><code>POST /api/session</code></td><td>创建会话</td><td>会话 id、用户画像、事项清单</td></tr>
+    <tr><td><code>POST /api/intent</code></td><td>口语 → 结构化意图</td><td>事项 id、置信度、复述、缺失槽位、来源</td></tr>
+    <tr><td><code>POST /api/guide</code></td><td>当前屏 → 下一步动作</td><td>动作类型、目标控件、大字指令、播报、护栏、判断依据、进度</td></tr>
+    <tr><td><code>POST /api/slots/extract</code></td><td>口语 → 表单值</td><td>槽位键值、置信度、来源</td></tr>
+    <tr><td><code>POST /api/rescue</code></td><td>生成求助话术</td><td>话术文本、热线号码</td></tr>
+    <tr><td><code>GET /api/session/:id/metrics</code></td><td>本次指标</td><td>步数、走错、护栏、转人工、耗时、是否完成</td></tr>
+  </table>
+  <p class="footer-note">完整契约见 <code>docs/api/openapi.yaml</code>（OpenAPI 3.1）。</p>
+
+  <h3>10.2 指标定义</h3>
+  <table>
+    <tr><th style="width:26%">名称</th><th>口径</th></tr>
+    <tr><td>引导步数</td><td>一次办理中 Agent 下发引导动作的次数，含纠偏动作</td></tr>
+    <tr><td>走错并被纠偏</td><td>Agent 判定当前屏幕偏离流程并下发 <code>back</code> 动作的次数</td></tr>
+    <tr><td>高危动作拦截</td><td>命中六类护栏、被降级为「本人确认」的节点数</td></tr>
+    <tr><td>基线步数 / 时长</td><td>无 Agent 时完成同一事项所需的操作步数与耗时（设计假设，待用户测试校准）</td></tr>
+  </table>
+
+  <h3>10.3 复现步骤</h3>
+  <ol>
+    <li><code>npm install</code>，复制 <code>.env.example</code> 为 <code>.env</code> 并填入模型密钥（可留空，走规则通道）。</li>
+    <li><code>npm run build &amp;&amp; npm start</code>，访问 <code>http://127.0.0.1:8787</code>。</li>
+    <li>点示例语句「我想问一下低保那个复核」，跟随高亮逐步操作至完成。</li>
+    <li><code>npm run smoke</code> 可在命令行复跑一遍全流程并输出断言结果。</li>
+    <li><code>node scripts/capture.mjs</code> 用无头浏览器重跑并生成本文档全部截图。</li>
+  </ol>
+
+  <h3>10.4 版本</h3>
+  <p>本文档对应代码版本 v0.9.0，文档版本 v1.0，2026 年 10 月。数据截止 2026-10-29。</p>
+
+  <div style="margin-top:16mm;padding-top:8px;border-top:1px solid #dbe3ee;font-size:8.6pt;color:#8494a8">
+    <p>随行帮办 AssistGuide ｜ 2026 iCAN 大学生创新创业大赛 · 快手 AI 未来创造者挑战赛 ｜ AI 产品实现方向</p>
+    <p>本说明书所述界面为按公开政务服务形态自行绘制的模拟界面，人物与证件信息均为虚构示例。</p>
+  </div>
+</section>
+
+</body>
+</html>

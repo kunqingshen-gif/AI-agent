@@ -1,0 +1,431 @@
+openapi: 3.1.0
+info:
+  title: 随行帮办 AssistGuide API
+  version: 0.9.0
+  description: |
+    面向数字弱势群体的 AI 跨应用办事导航 Agent。
+
+    设计约束：所有写操作必须携带会话 id；`/api/guide` 返回的目标控件一定存在于
+    请求所声明的屏幕中，否则服务端拒绝返回该动作（返回 500 并记录契约违例）。
+servers:
+  - url: http://127.0.0.1:8787
+    description: 本地演示环境
+
+tags:
+  - name: session
+    description: 会话与画像
+  - name: assist
+    description: 意图、引导、填表、救援
+  - name: ops
+    description: 运维与观测
+
+paths:
+  /healthz:
+    get:
+      tags: [ops]
+      summary: 健康检查
+      responses:
+        '200':
+          description: 服务可用
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, uptimeSeconds, llmAvailable, version]
+                properties:
+                  status: { type: string, enum: [ok] }
+                  uptimeSeconds: { type: integer }
+                  llmAvailable: { type: boolean, description: 模型通道是否启用；false 表示走规则兜底 }
+                  version: { type: string }
+
+  /api/meta:
+    get:
+      tags: [ops]
+      summary: 产品元信息与模型状态
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  product: { type: string }
+                  version: { type: string }
+                  llm:
+                    type: object
+                    properties:
+                      available: { type: boolean }
+                      model: { type: string }
+                      mode: { type: string }
+                  guardrailMode: { type: string, enum: [strict, assistive] }
+                  screens: { type: integer }
+
+  /api/tasks:
+    get:
+      tags: [ops]
+      summary: 支持的事项清单
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TaskSpecSummary' }
+
+  /api/screens/{id}:
+    get:
+      tags: [ops]
+      summary: 读取屏幕模型（供调试与第三方复现）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, example: gov.home }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScreenModel' }
+        '404':
+          description: 屏幕不存在
+
+  /api/session:
+    post:
+      tags: [session]
+      summary: 创建会话
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                profile: { $ref: '#/components/schemas/UserProfilePatch' }
+      responses:
+        '200':
+          description: 会话已创建
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessionId, profile, screenId, tasks]
+                properties:
+                  sessionId: { type: string, format: uuid }
+                  profile: { $ref: '#/components/schemas/UserProfile' }
+                  screenId: { type: string }
+                  tasks:
+                    type: array
+                    items: { $ref: '#/components/schemas/TaskSpecSummary' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/intent:
+    post:
+      tags: [assist]
+      summary: 口语 → 结构化意图
+      description: 优先采用模型判断；模型不可用或输出非法时降级到关键词规则。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, utterance]
+              properties:
+                sessionId: { type: string }
+                utterance: { type: string, minLength: 1, maxLength: 300 }
+      responses:
+        '200':
+          description: 识别结果；ok=false 时附带候选事项供用户澄清
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, intent, suggestions, message, source]
+                properties:
+                  ok: { type: boolean }
+                  intent:
+                    oneOf:
+                      - $ref: '#/components/schemas/Intent'
+                      - type: 'null'
+                  suggestions:
+                    type: array
+                    items: { type: string }
+                  message: { type: string }
+                  source: { type: string, enum: [llm, rule, none] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/SessionNotFound' }
+
+  /api/guide:
+    post:
+      tags: [assist]
+      summary: 当前屏幕 → 下一步动作
+      description: |
+        核心接口。决策由确定性流程引擎给出，模型仅生成措辞。
+        返回的 `targetControlId` 一定存在于请求声明的 `screenId` 中。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, screenId]
+              properties:
+                sessionId: { type: string }
+                screenId: { type: string }
+                slots:
+                  type: object
+                  additionalProperties: { type: string, maxLength: 60 }
+                attemptsOnScreen: { type: integer, minimum: 0, maximum: 50, default: 0 }
+                asksForHelp: { type: boolean, default: false }
+      responses:
+        '200':
+          description: 引导动作
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GuideAction' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/SessionNotFound' }
+
+  /api/slots/extract:
+    post:
+      tags: [assist]
+      summary: 口语 → 表单值
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, utterance]
+              properties:
+                sessionId: { type: string }
+                utterance: { type: string, maxLength: 300 }
+                slot: { type: string, description: 目标槽位，可省略 }
+                label: { type: string, description: 当前输入框的界面文案 }
+      responses:
+        '200':
+          description: 抽取结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  slots:
+                    type: object
+                    additionalProperties: { type: string }
+                  confidence: { type: number, minimum: 0, maximum: 1 }
+                  source: { type: string, enum: [llm, rule] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/rescue:
+    post:
+      tags: [assist]
+      summary: 生成人工求助话术
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId]
+              properties:
+                sessionId: { type: string }
+      responses:
+        '200':
+          description: 话术
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  script: { type: string }
+                  hotline: { type: string }
+
+  /api/session/{id}/metrics:
+    get:
+      tags: [assist]
+      summary: 会话指标
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionMetrics' }
+        '404': { $ref: '#/components/responses/SessionNotFound' }
+
+  /api/metrics:
+    get:
+      tags: [ops]
+      summary: 全局埋点计数
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: object
+                    additionalProperties: { type: integer }
+                  at: { type: integer }
+
+components:
+  responses:
+    BadRequest:
+      description: 请求参数不合法
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string, enum: [INVALID_ARGUMENT] }
+              message: { type: string }
+              detail: {}
+    SessionNotFound:
+      description: 会话不存在或已过期
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string, enum: [SESSION_NOT_FOUND] }
+              message: { type: string }
+
+  schemas:
+    UserProfilePatch:
+      type: object
+      properties:
+        displayName: { type: string, maxLength: 20 }
+        age: { type: integer, minimum: 40, maximum: 110 }
+        region: { type: string, maxLength: 40 }
+        livingAlone: { type: boolean }
+        digitalLiteracy: { type: string, enum: [low, medium, high] }
+        hearingImpaired: { type: boolean }
+
+    UserProfile:
+      type: object
+      properties:
+        displayName: { type: string }
+        age: { type: integer }
+        region: { type: string }
+        digitalLiteracy: { type: string, enum: [low, medium, high] }
+        livingAlone: { type: boolean }
+        hearingImpaired: { type: boolean }
+        dialect: { type: string }
+
+    TaskSpecSummary:
+      type: object
+      properties:
+        taskId:
+          type: string
+          enum: [allowance.renew, pension.qualify, medical.filing, utility.pay]
+        title: { type: string }
+        category: { type: string }
+        hotkey: { type: string }
+        requiredDocs:
+          type: array
+          items: { type: string }
+        baselineSteps: { type: integer }
+        baselineMs: { type: integer }
+        pitfalls:
+          type: array
+          items: { type: string }
+
+    Intent:
+      type: object
+      required: [taskId, confidence, restated, source]
+      properties:
+        taskId:
+          type: string
+          enum: [allowance.renew, pension.qualify, medical.filing, utility.pay]
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        slots:
+          type: object
+          additionalProperties: { type: string }
+        missingSlots:
+          type: array
+          items: { type: string }
+        urgency: { type: string, enum: [normal, urgent] }
+        restated: { type: string, description: 面向用户的一句话复述 }
+        source: { type: string, enum: [llm, rule] }
+        rawUtterance: { type: string }
+
+    GuideAction:
+      type: object
+      required: [kind, instruction, speak, reason, confidence, stepLabel, progress, source, rescue, latencyMs]
+      properties:
+        kind:
+          type: string
+          enum: [tap, input, back, read, human-confirm, handoff]
+          description: |
+            tap=点击目标控件；input=在目标控件填值；back=要求返回；
+            read=仅播报；human-confirm=护栏拦截，必须本人操作；handoff=转人工
+        targetControlId:
+          type: string
+          description: 目标控件，保证存在于当前屏幕
+        instruction: { type: string, maxLength: 60, description: 面向用户的大字指令 }
+        speak: { type: string, maxLength: 40, description: 语音播报文本 }
+        guardrail:
+          type: string
+          enum: [payment, identity, biometric, captcha, legal-consent, sensitive-info]
+        fieldId: { type: string, description: 填表节点对应的输入框 id }
+        prefill:
+          type: object
+          properties:
+            value: { type: string }
+            source: { type: string, enum: [profile, last-submission] }
+            label: { type: string }
+        reason: { type: string, description: 判断依据，用于审计与展示 }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        stepLabel: { type: string, example: 第 4 步 / 共 12 步 }
+        progress:
+          type: object
+          properties:
+            index: { type: integer }
+            total: { type: integer }
+        source: { type: string, enum: [llm, rule] }
+        rescue:
+          type: object
+          properties:
+            triggered: { type: boolean }
+            kind: { type: string, enum: [wrong-screen, stuck, face-failed, blocked, none] }
+            message: { type: string }
+            script: { type: string }
+        latencyMs: { type: integer }
+
+    SessionMetrics:
+      type: object
+      properties:
+        stepsGuided: { type: integer }
+        wrongTurns: { type: integer }
+        guardrailsTriggered: { type: integer }
+        handoffs: { type: integer }
+        elapsedMs: { type: integer }
+        completed: { type: boolean }
+        baselineSteps: { type: integer }
+        baselineMs: { type: integer }
+
+    ScreenModel:
+      type: object
+      properties:
+        id: { type: string }
+        app: { type: string }
+        title: { type: string }
+        semantics: { type: string }
+        blocks:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        traps:
+          type: array
+          items: { type: string }
