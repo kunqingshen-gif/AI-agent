@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GuideAction, Intent, ScreenId, SessionMetrics, SlotName } from '@shared/types';
 import { SCREENS } from '@shared/screens';
-import { api, type MetaResponse, type SessionResponse } from './client';
+import { api, type InterpretResponse, type MetaResponse, type SessionResponse } from './client';
 import { PARENT, resolveTarget } from './nav';
 import { getRecognition, speak, stopSpeaking } from './useSpeech';
 import { PhoneFrame } from './components/PhoneFrame';
@@ -47,6 +47,8 @@ export function App() {
   const [meta, setMeta] = useState<MetaResponse | null>(null);
   const [session, setSession] = useState<SessionResponse | null>(null);
   const [intent, setIntent] = useState<Intent | null>(null);
+  /** 仅当事项未收录、由模型现场规划时非空 */
+  const [planNote, setPlanNote] = useState<InterpretResponse['planned'] | null>(null);
   const [screenId, setScreenId] = useState<ScreenId>('gov.home');
   const [action, setAction] = useState<GuideAction | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -83,7 +85,7 @@ export function App() {
   }, [toast]);
 
   const guideWith = useCallback(
-    async (sid: string, screen: ScreenId, attemptCount: number, asksForHelp = false) => {
+    async (sid: string, screen: ScreenId, attemptCount: number, asksForHelp = false, tappedControlId?: string) => {
       const token = ++reqSeqRef.current;
       setBusy(true);
       try {
@@ -93,6 +95,7 @@ export function App() {
           slots: collectSlots(valuesRef.current),
           attemptsOnScreen: attemptCount,
           asksForHelp,
+          ...(tappedControlId ? { tappedControlId } : {}),
         });
         if (token !== reqSeqRef.current) return;
         setAction(next);
@@ -128,6 +131,7 @@ export function App() {
           return;
         }
         setIntent(result.intent);
+        setPlanNote(result.planned ?? null);
         setScreenId('gov.home');
         setAttempts(0);
         attemptsRef.current = 0;
@@ -155,7 +159,13 @@ export function App() {
       }
       const { next, message } = resolveTarget(controlId);
       if (!next) {
+        /*
+         * 指到的入口点下去了，但演示版没有下一页。
+         * 这时不能只是弹个提示就完事——得告诉服务端「这一步我点到了」，
+         * 否则它会一直指同一个地方，用户以为坏了。
+         */
         setToast(message ?? '这个入口本次演示未开放');
+        await guideWith(session.sessionId, screenId, 0, false, controlId);
         return;
       }
       setErrors({});
@@ -341,6 +351,21 @@ export function App() {
                 <span className="intent-meta">
                   {intent.source === 'llm' ? '模型理解' : '规则匹配'} · 置信度 {intent.confidence.toFixed(2)}
                 </span>
+              </p>
+            )}
+            {planNote && (
+              <p className="plan-line">
+                <span className="plan-badge">AI 现场规划</span>
+                <span>
+                  {planNote.title} · 共 {planNote.steps} 步
+                  {planNote.coverage === 'partial' ? ' · 只排到能确认的那一步' : ''}
+                </span>
+                {planNote.issues.length > 0 && (
+                  <span className="plan-note">挡下 {planNote.issues.length} 处越界指路</span>
+                )}
+                {planNote.injectedGuardrails.length > 0 && (
+                  <span className="plan-note">自动补 {planNote.injectedGuardrails.length} 处护栏</span>
+                )}
               </p>
             )}
           </div>

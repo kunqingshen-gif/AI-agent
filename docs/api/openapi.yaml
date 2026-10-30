@@ -155,6 +155,21 @@ paths:
                     items: { type: string }
                   message: { type: string }
                   source: { type: string, enum: [llm, rule, none] }
+                  planned:
+                    type: object
+                    description: |
+                      仅当事项未收录、由模型现场规划时出现。
+                      `issues` 非空表示有步骤被屏幕契约或语义闸门挡下（此时 coverage 必为 partial）。
+                    properties:
+                      title: { type: string }
+                      coverage: { type: string, enum: [full, partial] }
+                      steps: { type: integer }
+                      issues:
+                        type: array
+                        items: { type: string }
+                      injectedGuardrails:
+                        type: array
+                        items: { type: string }
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/SessionNotFound' }
 
@@ -163,7 +178,8 @@ paths:
       tags: [assist]
       summary: 当前屏幕 → 下一步动作
       description: |
-        核心接口。决策由确定性流程引擎给出，模型仅生成措辞。
+        核心接口。已收录事项的决策由确定性流程引擎给出，模型仅生成措辞；
+        未收录事项则由模型规划、经契约校验后生成的流程驱动。
         返回的 `targetControlId` 一定存在于请求声明的 `screenId` 中。
       requestBody:
         required: true
@@ -180,6 +196,13 @@ paths:
                   additionalProperties: { type: string, maxLength: 60 }
                 attemptsOnScreen: { type: integer, minimum: 0, maximum: 50, default: 0 }
                 asksForHelp: { type: boolean, default: false }
+                tappedControlId:
+                  type: string
+                  maxLength: 60
+                  description: |
+                    用户刚刚点下的控件 id。用于「点到位但页面没跳转」的情形
+                    （入口未收录、或对方 App 停在当前页），避免服务端反复指同一处。
+                    只有等于当前应指控件时才计为完成。
       responses:
         '200':
           description: 引导动作

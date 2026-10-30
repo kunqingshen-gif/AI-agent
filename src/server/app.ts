@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { SCREEN_IDS, type AssistRequest, type ScreenId, type SlotName } from '@shared/types';
+import { VERSION } from '@shared/version';
 import { SCREENS } from '@shared/screens';
 import type { AssistService } from '@core/application/assist-service';
 import type { AppConfig } from '@infra/config';
@@ -36,6 +37,7 @@ const GuideSchema = z.object({
   slots: z.record(z.string().max(60)).default({}),
   attemptsOnScreen: z.number().int().min(0).max(50).default(0),
   asksForHelp: z.boolean().default(false),
+  tappedControlId: z.string().max(60).optional(),
 });
 
 const ExtractSchema = z.object({
@@ -113,12 +115,12 @@ export async function buildApp(deps: AppDeps) {
     uptimeSeconds: Math.round(process.uptime()),
     llmAvailable: service.llmStatus.available,
     llmHealthy: service.llmStatus.healthy,
-    version: '0.9.0',
+    version: VERSION,
   }));
 
   app.get('/api/meta', async () => ({
     product: '随行帮办 AssistGuide',
-    version: '0.9.0',
+    version: VERSION,
     llm: {
       available: service.llmStatus.available,
       healthy: service.llmStatus.healthy,
@@ -173,6 +175,7 @@ export async function buildApp(deps: AppDeps) {
       slots: parsed.data.slots as Partial<Record<SlotName, string>>,
       attemptsOnScreen: parsed.data.attemptsOnScreen,
       asksForHelp: parsed.data.asksForHelp,
+      ...(parsed.data.tappedControlId ? { tappedControlId: parsed.data.tappedControlId } : {}),
     };
     try {
       return await service.guide(payload.sessionId, payload);

@@ -1,4 +1,4 @@
-import { createWriteStream, mkdirSync } from 'node:fs';
+import { createWriteStream, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import type { TelemetryEvent, TelemetryPort } from '@core/ports';
 import type { Logger } from '../logger';
@@ -18,11 +18,40 @@ export class JsonlTelemetry implements TelemetryPort {
   constructor(
     dataDir: string,
     private readonly logger: Logger,
+    /** 保留天数：按天分片但从不清理，长期运行会把磁盘写满 */
+    retentionDays = 7,
   ) {
     mkdirSync(dataDir, { recursive: true });
+    JsonlTelemetry.prune(dataDir, retentionDays, logger);
     const file = path.join(dataDir, `events-${new Date().toISOString().slice(0, 10)}.jsonl`);
     this.stream = createWriteStream(file, { flags: 'a', encoding: 'utf8' });
     this.stream.on('error', (err) => this.logger.error({ err: String(err) }, '埋点写入失败'));
+  }
+
+  /**
+   * 启动时清掉过期的分片。
+   * 只认 `events-YYYY-MM-DD.jsonl` 这一种命名，别的文件一律不碰 ——
+   * 数据目录可能被人放了别的东西，清理逻辑不该越权。
+   */
+  private static prune(dataDir: string, retentionDays: number, logger: Logger): void {
+    if (retentionDays <= 0) return;
+    const cutoff = Date.now() - retentionDays * 86_400_000;
+    try {
+      for (const name of readdirSync(dataDir)) {
+        const matched = /^events-(\d{4}-\d{2}-\d{2})\.jsonl$/.exec(name);
+        if (!matched?.[1]) continue;
+        const at = Date.parse(`${matched[1]}T00:00:00Z`);
+        if (!Number.isFinite(at) || at >= cutoff) continue;
+        try {
+          unlinkSync(path.join(dataDir, name));
+        } catch (error) {
+          logger.warn({ file: name, err: String(error) }, '过期埋点清理失败，跳过');
+        }
+      }
+    } catch (error) {
+      /* 目录不可读不该阻断服务启动 */
+      logger.warn({ dataDir, err: String(error) }, '埋点目录扫描失败');
+    }
   }
 
   record(event: TelemetryEvent): void {

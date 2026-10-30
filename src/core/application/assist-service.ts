@@ -1,15 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import type {
   AssistRequest,
+  FlowId,
   GuideAction,
   Intent,
   RescueHint,
   ScreenId,
   SessionMetrics,
   SlotName,
-  TaskId,
   UserProfile,
 } from '@shared/types';
+import { isCustomFlow } from '@shared/types';
 import { SCREENS } from '@shared/screens';
 import type { LlmPort, TelemetryPort, ClockPort } from '../ports';
 import type { TaskFlow } from '../domain/catalog';
@@ -17,17 +18,22 @@ import { TASK_FLOWS, TASK_LIST } from '../domain/catalog';
 import { activeNode, decide } from '../domain/guide-engine';
 import { normalizeSpeak, sanitizeAssistantText } from '../domain/guardrails';
 import { extractSlotsByRule, ruleIntent, topSuggestions } from '../domain/intent-rules';
+import { buildFlowFromPlan, type PlanValidation } from '../domain/plan';
 import {
   GUIDE_SYSTEM_PROMPT,
   GuideOutputSchema,
   INTENT_SYSTEM_PROMPT,
   IntentOutputSchema,
+  PLAN_SYSTEM_PROMPT,
+  PlanOutputSchema,
   SLOT_SYSTEM_PROMPT,
   SlotOutputSchema,
   buildGuideUserPrompt,
+  buildPlanUserPrompt,
   buildSlotUserPrompt,
   extractJson,
   isKnownTask,
+  toPlanDraft,
 } from './prompts';
 import { defaultProfile } from '@infra/config';
 import type { Logger } from '@infra/logger';
@@ -36,9 +42,11 @@ import type { Logger } from '@infra/logger';
  * 应用层：编排「理解意图 → 生成计划 → 逐步引导 → 卡住救援」的完整闭环。
  *
  * 分层约定：
- *  - 决策（点哪儿）由 domain/guide-engine 的确定性流程给出，模型无权更改；
- *  - 措辞（怎么说）由模型生成，但必须过 zod 校验 + 高危词过滤，失败即回退模板。
- * 这样既保证「AI 真的在参与」，又保证「演示现场不会翻车」。
+ *  - 已收录事项：路径由 catalog 的确定性流程图给出，模型只改措辞；
+ *  - 未收录事项：路径由模型现场规划，但必须先过 domain/plan.ts 的屏幕契约与护栏校验，
+ *    校验不过就退回「未收录」话术，绝不指一个不存在的按钮；
+ *  - 措辞：模型生成后必须过 zod + 高危词过滤，失败即回退模板。
+ * 三档合起来 = AI 真的在决策，但决策不能越过契约。
  */
 
 export interface SessionState {
@@ -61,9 +69,21 @@ export interface SessionState {
 export interface InterpretResult {
   ok: boolean;
   intent: Intent | null;
-  suggestions: TaskId[];
+  suggestions: FlowId[];
   message: string;
   source: 'llm' | 'rule' | 'none';
+  /**
+   * 本次是否为「AI 现场规划」。前端据此在复述行旁打标，
+   * 让评委一眼看出这一条路径不是预置的，是模型当场排的。
+   */
+  planned?: {
+    title: string;
+    coverage: 'full' | 'partial';
+    steps: number;
+    /** 被契约校验拦下或剔除的步骤说明，0 条表示模型一次过 */
+    issues: string[];
+    injectedGuardrails: string[];
+  };
 }
 
 const SIMULATED_PROFILE: UserProfile = {
@@ -178,9 +198,13 @@ export class AssistService {
     const session = this.requireSession(sessionId);
     const ruleBased = ruleIntent(utterance);
 
-    let intent: Intent | null = ruleBased;
-    let source: InterpretResult['source'] = ruleBased ? 'rule' : 'none';
+    let intent: Intent | null = null;
+    let source: InterpretResult['source'] = 'none';
+    /** 已收录事项取 catalog；AI 规划的临时事项由规划结果携带 */
+    let flow: TaskFlow | null = null;
+    let planned: InterpretResult['planned'];
 
+    /* ① 模型识别已收录事项：对口语归一、方言词、说错名字的处理比规则强 */
     if (this.llm.available) {
       try {
         const raw = await this.llm.complete(
@@ -198,7 +222,7 @@ export class AssistService {
         );
         const parsed = IntentOutputSchema.safeParse(extractJson(raw));
         if (parsed.success && parsed.data.taskId !== 'unknown' && isKnownTask(parsed.data.taskId)) {
-          const flow = TASK_FLOWS[parsed.data.taskId];
+          const known = TASK_FLOWS[parsed.data.taskId];
           const slots: Partial<Record<SlotName, string>> = {
             ...extractSlotsByRule(utterance),
             ...this.pickSlots(parsed.data.slots ?? {}),
@@ -209,10 +233,11 @@ export class AssistService {
             slots,
             missingSlots: [],
             urgency: /急|马上|今天|截止|到期/.test(utterance) ? 'urgent' : 'normal',
-            restated: (parsed.data.restated ?? '').replace(/^您要办的是[:：]\s*/, '').trim() || flow.title,
+            restated: (parsed.data.restated ?? '').replace(/^您要办的是[:：]\s*/, '').trim() || known.title,
             source: 'llm',
             rawUtterance: utterance,
           };
+          flow = known;
           source = 'llm';
         } else {
           this.telemetry.record({
@@ -221,8 +246,6 @@ export class AssistService {
             at: this.clock.now(),
             payload: { stage: 'intent', error: 'invalid-output' },
           });
-          intent = ruleBased;
-          source = ruleBased ? 'rule' : 'none';
         }
       } catch (error) {
         this.telemetry.record({
@@ -235,17 +258,39 @@ export class AssistService {
       }
     }
 
-    if (!intent) {
+    /* ② 规则兜底：即使模型不可用，已收录的四件事件件能走 */
+    if (!intent && ruleBased) {
+      intent = ruleBased;
+      flow = TASK_FLOWS[ruleBased.taskId];
+      source = 'rule';
+    }
+
+    /*
+     * ③ 都没命中 → 让模型现场排路径。
+     *
+     * 这是「AI 不只是装饰」的那一层：事项库只有 4 件事，而老人要办的事远不止 4 件。
+     * 模型排出来的每一步都要过 plan.ts 的契约校验，过了才允许进入同一个引导循环。
+     */
+    if (!intent && this.llm.available) {
+      const result = await this.planUnknown(sessionId, utterance);
+      if (result) {
+        intent = result.intent;
+        flow = result.flow;
+        planned = result.planned;
+        source = 'llm';
+      }
+    }
+
+    if (!intent || !flow) {
       return {
         ok: false,
         intent: null,
         suggestions: topSuggestions(utterance),
-        message: '我没太听明白您要办哪件事。您可以从下面三件里选一件，也可以再说一遍。',
+        message: '这件事我还没学会。您可以从下面三件里选一件，也可以说得再具体点——比如「我要办高龄津贴」。',
         source,
       };
     }
 
-    const flow = TASK_FLOWS[intent.taskId];
     const needSlots = new Set<SlotName>();
     flow.nodes.forEach((node) => {
       if (node.slot) needSlots.add(node.slot);
@@ -262,10 +307,118 @@ export class AssistService {
       type: 'intent.parsed',
       sessionId,
       at: this.clock.now(),
-      payload: { taskId: intent.taskId, confidence: intent.confidence, source: intent.source },
+      payload: {
+        taskId: intent.taskId,
+        confidence: intent.confidence,
+        source: intent.source,
+        planned: Boolean(planned),
+      },
     });
 
-    return { ok: true, intent, suggestions: [intent.taskId], message: intent.restated, source };
+    return {
+      ok: true,
+      intent,
+      suggestions: [intent.taskId],
+      message: intent.restated,
+      source,
+      ...(planned ? { planned } : {}),
+    };
+  }
+
+  /**
+   * 未收录事项的现场规划。
+   *
+   * 返回 null 表示「这个我也不敢排」——调用方据此退回标准话术。
+   * 三种失败都会留痕：形状不合法（zod）、契约不合法（plan.ts）、调用失败（网络/超时）。
+   */
+  private async planUnknown(
+    sessionId: string,
+    utterance: string,
+  ): Promise<{ intent: Intent; flow: TaskFlow; planned: NonNullable<InterpretResult['planned']> } | null> {
+    try {
+      const hints = topSuggestions(utterance).map((id) => TASK_FLOWS[id].title);
+      const raw = await this.llm.complete(
+        {
+          system: PLAN_SYSTEM_PROMPT,
+          user: buildPlanUserPrompt(utterance, hints),
+          temperature: 0.2,
+          maxTokens: 700,
+          /* 规划是一次性重活，用户看得见"正在想"，给足 15s；失败也不熔断主通道 */
+          timeoutMs: 15_000,
+          bestEffort: true,
+        },
+        sessionId,
+      );
+      const parsed = PlanOutputSchema.safeParse(extractJson(raw));
+      if (!parsed.success) {
+        this.telemetry.record({
+          type: 'plan.rejected',
+          sessionId,
+          at: this.clock.now(),
+          payload: { stage: 'schema', error: parsed.error.issues[0]?.message ?? 'invalid' },
+        });
+        return null;
+      }
+
+      const validation: PlanValidation = buildFlowFromPlan(toPlanDraft(parsed.data), utterance);
+      if (!validation.ok || !validation.flow) {
+        this.telemetry.record({
+          type: 'plan.rejected',
+          sessionId,
+          at: this.clock.now(),
+          payload: { stage: 'contract', issues: validation.issues.slice(0, 4) },
+        });
+        this.logger.warn({ sessionId, issues: validation.issues }, 'AI 规划未通过屏幕契约校验');
+        return null;
+      }
+
+      const flow = validation.flow;
+      this.telemetry.record({
+        type: 'plan.created',
+        sessionId,
+        at: this.clock.now(),
+        payload: {
+          taskId: flow.taskId,
+          title: flow.title,
+          steps: flow.nodes.length,
+          coverage: validation.coverage,
+          droppedSteps: validation.droppedSteps,
+          injectedGuardrails: validation.injectedGuardrails,
+          issues: validation.issues.slice(0, 4),
+        },
+      });
+
+      return {
+        intent: {
+          taskId: flow.taskId,
+          confidence: 0.72,
+          slots: extractSlotsByRule(utterance),
+          missingSlots: [],
+          urgency: /急|马上|今天|截止|到期/.test(utterance) ? 'urgent' : 'normal',
+          restated: `您要办的是：${flow.title}。这件事不在常见清单里，我照着屏幕给您排了 ${flow.nodes.length} 步。`,
+          source: 'llm',
+          rawUtterance: utterance,
+        },
+        flow,
+        planned: {
+          title: flow.title,
+          /* 覆盖度以校验结果为准：模型说 full、实际被截断，就得如实说只走到这儿 */
+          coverage: validation.coverage,
+          steps: flow.nodes.length,
+          issues: validation.issues,
+          injectedGuardrails: validation.injectedGuardrails,
+        },
+      };
+    } catch (error) {
+      this.telemetry.record({
+        type: 'llm.fallback',
+        sessionId,
+        at: this.clock.now(),
+        payload: { stage: 'plan', error: String(error) },
+      });
+      this.logger.warn({ sessionId, err: String(error) }, '现场规划失败，退回未收录话术');
+      return null;
+    }
   }
 
   /** 从模型输出中挑出合法槽位，过滤掉编造/越界字段 */
@@ -302,7 +455,16 @@ export class AssistService {
     if (pending) {
       const advanced = req.screenId === pending.successScreen && req.screenId !== pending.screenId;
       const typed = pending.kind === 'input' && pending.slot ? Boolean(session.slots[pending.slot]?.trim()) : false;
-      if (advanced || typed) {
+      /*
+       * 点到位也算走通：有些入口点下去没有下一页（演示库未收录，或对方 App 停在当前页）。
+       * 只认「屏幕变了没有」会让人被反复要求点同一个地方，看起来像坏掉了。
+       * 只认「点的正是我指的那个控件」，点别的不算。
+       */
+      const tapped =
+        Boolean(req.tappedControlId) &&
+        pending.targetControlId !== undefined &&
+        req.tappedControlId === pending.targetControlId;
+      if (advanced || typed || tapped) {
         session.completed.add(pending.id);
       }
     }
@@ -407,8 +569,7 @@ export class AssistService {
     }
 
     /* 4. 收尾：完成判定 */
-    const completed = rule.completed;
-    if (completed && !session.finished) {
+    const completed = rule.completed;    if (completed && !session.finished) {
       session.finished = true;
       this.telemetry.record({
         type: 'task.completed',
@@ -429,6 +590,15 @@ export class AssistService {
           payload: { taskId: flow.taskId, steps: session.stepsGuided, wrongTurns: session.wrongTurns },
         });
       }
+    }
+
+    /*
+     * AI 规划的路径要在判断依据里自报家门。
+     * 「哪一步是 catalog 保证的、哪一步是模型当场推的」必须可追溯——
+     * 这不只是给评委看，出问题时也只有这个标记能把责任边界划清楚。
+     */
+    if (isCustomFlow(flow.taskId)) {
+      reason = `AI 规划路径｜${reason}`;
     }
 
     const action: GuideAction = {

@@ -77,13 +77,19 @@ export class DashScopeLlm implements LlmPort {
         if (!retryable || attempt === attempts) break;
       }
     }
+    if (req.bestEffort) {
+      /* 尽力而为的调用失败只记账、不熔断，避免拖累主链路 */
+      this.logger.warn({ traceId, err: String(lastError) }, '尽力而为的模型调用失败，不熔断');
+      throw lastError instanceof Error ? lastError : new LlmError('未知模型错误', 'network');
+    }
     this.trip(lastError);
     throw lastError instanceof Error ? lastError : new LlmError('未知模型错误', 'network');
   }
 
   private async once(req: LlmRequest, traceId: string, attempt: number): Promise<string> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.config.timeoutMs);
+    const timeoutMs = req.timeoutMs ?? this.config.timeoutMs;
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     const startedAt = Date.now();
 
     try {
@@ -123,7 +129,7 @@ export class DashScopeLlm implements LlmPort {
     } catch (error) {
       if (error instanceof LlmError) throw error;
       if (error instanceof Error && error.name === 'AbortError') {
-        throw new LlmError(`模型超时（${this.config.timeoutMs}ms）`, 'timeout');
+        throw new LlmError(`模型超时（${timeoutMs}ms）`, 'timeout');
       }
       throw new LlmError(`模型网络异常：${String(error)}`, 'network');
     } finally {

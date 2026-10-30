@@ -13,6 +13,18 @@
 export const TASK_IDS = ['allowance.renew', 'pension.qualify', 'medical.filing', 'utility.pay'] as const;
 export type TaskId = (typeof TASK_IDS)[number];
 
+/**
+ * 事项标识。
+ *
+ * 已收录事项用固定的 TaskId；事项库没收录、由模型现场规划的临时事项用 `custom.` 前缀。
+ * 加这个前缀不是为了好看：它让「有流程图背书的事项」与「AI 现编的事项」在日志、埋点、
+ * 指标里天然可区分，评审看事件流就能分清哪一步是 catalog 保证的、哪一步是模型推的。
+ */
+export type FlowId = TaskId | `custom.${string}`;
+export function isCustomFlow(id: string): id is `custom.${string}` {
+  return id.startsWith('custom.');
+}
+
 /* ────────────────────────── 屏幕 ────────────────────────── */
 
 export const SCREEN_IDS = [
@@ -105,7 +117,7 @@ export interface UserProfile {
 }
 
 export interface Intent {
-  taskId: TaskId;
+  taskId: FlowId;
   confidence: number;
   slots: Partial<Record<SlotName, string>>;
   missingSlots: SlotName[];
@@ -199,6 +211,13 @@ export interface AssistRequest {
   attemptsOnScreen: number;
   /** 用户主动求助 */
   asksForHelp: boolean;
+  /**
+   * 用户刚刚点下的控件 id（可读屏环境里就是无障碍事件）。
+   *
+   * 为什么需要它：有些入口点下去之后没有下一页（演示库未收录、或对方 App 停在当前页），
+   * 只靠「屏幕变了没有」无法判断这一步算不算走通，会让人卡在原地被反复要求点同一个地方。
+   */
+  tappedControlId?: string;
 }
 
 export interface SessionMetrics {

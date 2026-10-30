@@ -1,4 +1,5 @@
 import type { Intent, SlotName, TaskId } from '@shared/types';
+import { TASK_IDS } from '@shared/types';
 import { TASK_FLOWS } from './catalog';
 
 /**
@@ -16,7 +17,10 @@ export function scoreTasks(utterance: string): IntentCandidate[] {
   const text = utterance.replace(/\s+/g, '');
   const candidates: IntentCandidate[] = [];
 
-  for (const flow of Object.values(TASK_FLOWS)) {
+  /* 遍历 TASK_IDS 而不是 Object.values(TASK_FLOWS)：前者能把 taskId 的类型收窄为 TaskId，
+     后者会退化成 FlowId（含 AI 规划的 custom.*），规则层不该产出这类 id */
+  for (const taskId of TASK_IDS) {
+    const flow = TASK_FLOWS[taskId];
     const terms = flow.hotkey.split(/\s+/).filter(Boolean);
     let score = 0;
     const matched: string[] = [];
@@ -33,7 +37,7 @@ export function scoreTasks(utterance: string): IntentCandidate[] {
         matched.push(frag);
       }
     }
-    if (score > 0) candidates.push({ taskId: flow.taskId, score, matched });
+    if (score > 0) candidates.push({ taskId, score, matched });
   }
 
   return candidates.sort((a, b) => b.score - a.score);
@@ -103,7 +107,14 @@ export function extractSlotsByRule(utterance: string): Partial<Record<SlotName, 
   return slots;
 }
 
-export function ruleIntent(utterance: string): Intent | null {
+/**
+ * 规则识别的返回值把 taskId 收窄为 TaskId：
+ * 规则层只可能命中已收录事项，AI 规划的 custom.* 不该从这里产出，
+ * 收窄后调用方可以直接索引 TASK_FLOWS，不必再判断。
+ */
+export type RuleIntent = Intent & { taskId: TaskId };
+
+export function ruleIntent(utterance: string): RuleIntent | null {
   const candidates = scoreTasks(utterance);
   const best = candidates[0];
   if (!best || best.score < 4) return null;

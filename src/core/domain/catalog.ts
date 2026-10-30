@@ -1,4 +1,4 @@
-import type { GuardrailKind, ScreenId, SlotName, TaskId, TaskSpecSummary } from '@shared/types';
+import type { FlowId, GuardrailKind, ScreenId, SlotName, TaskId, TaskSpecSummary } from '@shared/types';
 
 /**
  * 任务知识库（Task Catalog）
@@ -30,7 +30,8 @@ export interface FlowNode {
 }
 
 export interface TaskFlow {
-  taskId: TaskId;
+  /** 已收录事项为 TaskId；AI 现场规划的临时事项为 custom.xxx */
+  taskId: FlowId;
   title: string;
   category: string;
   /** 触发词，用于规则层意图识别与展示 */
@@ -387,8 +388,8 @@ export const TASK_FLOWS: Record<TaskId, TaskFlow> = {
   'utility.pay': utilityFlow,
 };
 
-export const TASK_LIST: TaskSpecSummary[] = Object.values(TASK_FLOWS).map((flow) => ({
-  taskId: flow.taskId,
+export const TASK_LIST: TaskSpecSummary[] = Object.values(TASK_FLOWS).map((flow): TaskSpecSummary => ({
+  taskId: flow.taskId as TaskId,
   title: flow.title,
   category: flow.category,
   hotkey: flow.hotkey,

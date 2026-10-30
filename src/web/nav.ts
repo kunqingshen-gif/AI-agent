@@ -63,8 +63,13 @@ export const PARENT: Partial<Record<ScreenId, ScreenId>> = {
   'utility.done': 'gov.home',
 };
 
-/** 演示中未开放的事项，点击后给出提示而不是死路 */
-export const UNOPENED_HINT = '这个事项本次演示没有开放，我们先办低保复核。';
+/**
+ * 演示中未开放的入口，点击后给出提示而不是死路。
+ *
+ * 注意措辞：不能说「我们先办低保复核」——用户办的可能不是低保（比如高龄津贴）。
+ * 提示要说清两件事：后面那页没接进来（诚实）、下一步我会给你材料清单（有出路）。
+ */
+export const UNOPENED_HINT = '这个入口后面那页还没接进演示版。我把要带的东西念给您，真卡住了就点「我卡住了」。';
 
 export function resolveTarget(controlId: string): { next?: ScreenId; message?: string } {
   const next = NAV[controlId];

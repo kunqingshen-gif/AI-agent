@@ -10,6 +10,18 @@ export interface LlmRequest {
   maxTokens?: number;
   /** 期望返回 JSON，适配器会做容错解析 */
   expectJson?: boolean;
+  /**
+   * 单次调用的超时覆盖（毫秒）。
+   * 引导改写必须快（用户盯着屏幕等），现场规划允许慢一点（用户看得见"正在想"），
+   * 两者的合理上限不是同一个数，所以超时不该写死在配置里。
+   */
+  timeoutMs?: number;
+  /**
+   * 尽力而为：失败不触发熔断。
+   * 规划失败只是"这件事没学会"，不该把整个模型通道拉黑 60 秒——
+   * 否则一次慢查询会让接下来的普通引导全部降级成规则话术。
+   */
+  bestEffort?: boolean;
 }
 
 export interface LlmHealth {
@@ -38,7 +50,11 @@ export interface TelemetryEvent {
     | 'rescue.triggered'
     | 'task.completed'
     | 'llm.fallback'
-    | 'llm.error';
+    | 'llm.error'
+    /** 模型为未收录事项现场规划，并通过了契约校验 */
+    | 'plan.created'
+    /** 模型给出的计划被 schema 或屏幕契约拦下 */
+    | 'plan.rejected';
   sessionId: string;
   at: number;
   payload: Record<string, unknown>;

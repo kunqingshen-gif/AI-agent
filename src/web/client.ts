@@ -1,4 +1,4 @@
-import type { GuideAction, Intent, ScreenId, SessionMetrics, SlotName, TaskId, UserProfile } from '@shared/types';
+import type { FlowId, GuideAction, Intent, ScreenId, SessionMetrics, SlotName, TaskId, UserProfile } from '@shared/types';
 
 const BASE = '';
 
@@ -24,9 +24,17 @@ export interface SessionResponse {
 export interface InterpretResponse {
   ok: boolean;
   intent: Intent | null;
-  suggestions: TaskId[];
+  suggestions: FlowId[];
   message: string;
   source: 'llm' | 'rule' | 'none';
+  /** 事项未收录、由模型现场规划时才有；前端据此打「AI 现场规划」标 */
+  planned?: {
+    title: string;
+    coverage: 'full' | 'partial';
+    steps: number;
+    issues: string[];
+    injectedGuardrails: string[];
+  };
 }
 
 export interface MetaResponse {
@@ -47,6 +55,7 @@ export const api = {
     slots: Partial<Record<SlotName, string>>;
     attemptsOnScreen: number;
     asksForHelp: boolean;
+    tappedControlId?: string;
   }) => request<GuideAction>('/api/guide', { method: 'POST', body: JSON.stringify(params) }),
   extractSlots: (sessionId: string, utterance: string, slot?: string, label?: string) =>
     request<{ slots: Partial<Record<SlotName, string>>; confidence: number; source: string }>('/api/slots/extract', {
