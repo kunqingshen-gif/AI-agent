@@ -107,4 +107,25 @@ describe('确定性引导引擎', () => {
     expect(decision.completed).toBe(true);
     expect(decision.kind).toBe('read');
   });
+
+  it('切到底部标签不算走错，话术允许先看看别的', () => {
+    for (const [screenId, name] of [
+      ['gov.service', '服务大厅'],
+      ['gov.mine', '我的'],
+      ['gov.home', '首页'],
+    ] as const) {
+      const decision = run({ screenId, completed: ['a1'] });
+      expect(decision.kind).toBe('back');
+      expect(decision.instruction).toContain(name);
+      expect(decision.instruction).toContain('返回');
+      expect(decision.instruction).not.toContain('离开了办理页面');
+      expect(decision.rescue.kind).toBe('stuck');
+    }
+  });
+
+  it('进错专区仍然明确纠偏', () => {
+    const decision = run({ screenId: 'wrong.insurance', completed: ['a1'] });
+    expect(decision.instruction).toContain('医保服务');
+    expect(decision.rescue.kind).toBe('wrong-screen');
+  });
 });

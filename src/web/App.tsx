@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AnswerPayload, GuideAction, Intent, ScreenId, SessionMetrics, SlotName } from '@shared/types';
 import { SCREENS } from '@shared/screens';
 import { api, type InterpretResponse, type MetaResponse, type SessionResponse } from './client';
-import { PARENT, resolveTarget } from './nav';
+import { PARENT, TAB_OF, isBrowseControl, resolveTarget } from './nav';
 import { getRecognition, speak, stopSpeaking } from './useSpeech';
 import { PhoneFrame } from './components/PhoneFrame';
 import { ScreenView } from './components/ScreenView';
@@ -22,12 +22,8 @@ for (const screen of Object.values(SCREENS)) {
   }
 }
 
-/** 底部标签对应的当前屏，用于正确高亮 */
-const TAB_SCREEN: Record<string, string> = {
-  'gov.home': 'tab.index',
-  'gov.service': 'tab.service',
-  'gov.mine': 'tab.mine',
-};
+/** 真正的「走偏」屏幕：进错专区才算迷路，逛店不算 */
+const TRAP_SCREENS = new Set(['wrong.insurance', 'wrong.temp']);
 
 const EXAMPLES = ['我想问一下低保那个复核，今年还没弄呢', '养老金要认证，我不会弄', '我要交水费'];
 
@@ -80,6 +76,12 @@ export function App() {
   const [transcript, setTranscript] = useState('');
   /** 非空表示正在进行人脸核验，值为待放行的控件 id */
   const [faceVerify, setFaceVerify] = useState<string | null>(null);
+  /** 页面栈：从哪进来的就回哪去，不靠写死的上级页面 */
+  const [stack, setStack] = useState<ScreenId[]>([]);
+  /** 界面字号档位——「我的」里的「字体调大」是真的会变大 */
+  const [fontLarge, setFontLarge] = useState(false);
+  /** 客服弹窗：热线与求助话术 */
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const valuesRef = useRef<Record<string, string>>({});
   const attemptsRef = useRef(0);
@@ -156,6 +158,8 @@ export function App() {
         setAnswer(null);
         setIntent(result.intent);
         setPlanNote(result.planned ?? null);
+        /* 新事项从首页起步，把浏览路径清空 */
+        setStack([]);
         setScreenId('gov.home');
         setAttempts(0);
         attemptsRef.current = 0;
@@ -167,6 +171,24 @@ export function App() {
       }
     },
     [session, guideWith, speakOn],
+  );
+
+  /**
+   * 换页并记栈。
+   *
+   * 栈的作用是让「返回」回到真实的上一步：从服务大厅点进「高龄津贴」，
+   * 返回就回服务大厅，而不是去首页再找一遍。写死的上级页面做不到这一点。
+   */
+  const goTo = useCallback(
+    (next: ScreenId) => {
+      setStack((prev) => [...prev.slice(-9), screenId]);
+      setScreenId(next);
+      setAttempts(0);
+      attemptsRef.current = 0;
+      setActiveField(null);
+      setErrors({});
+    },
+    [screenId],
   );
 
   const advance = useCallback(
@@ -192,38 +214,69 @@ export function App() {
         await guideWith(session.sessionId, screenId, 0, false, controlId);
         return;
       }
-      setErrors({});
-      setScreenId(next);
-      setAttempts(0);
-      attemptsRef.current = 0;
-      setActiveField(null);
+      goTo(next);
       await guideWith(session.sessionId, next, 0);
     },
-    [session, screenId, guideWith],
+    [session, screenId, guideWith, goTo],
   );
 
   const onControl = useCallback(
     async (controlId: string) => {
+      /* 三个不换页的真实动作：字号、客服、说明页里的返回 */
+      if (controlId === 'mine.action.font') {
+        setFontLarge((prev) => {
+          setToast(prev ? '字号已恢复标准大小' : '字号调大了，您看看合不合适');
+          return !prev;
+        });
+        return;
+      }
+      if (controlId === 'mine.action.help' || controlId === 'face.btn.help' || controlId.endsWith('.btn.hotline')) {
+        setHelpOpen(true);
+        return;
+      }
+      if (controlId === 'done.btn.share') {
+        const line = `我在手机上办完了「${intent?.restated ?? screen.title}」，受理编号在短信里，您有空帮我看看对不对。`;
+        void navigator.clipboard?.writeText(line);
+        setToast('结果已复制，可以发给家人');
+        return;
+      }
+      if (controlId === 'todo.btn.back') {
+        const prev = stack.at(-1) ?? PARENT[screenId];
+        if (!prev) return;
+        setStack((s) => s.slice(0, -1));
+        setScreenId(prev);
+        setAttempts(0);
+        attemptsRef.current = 0;
+        if (session) await guideWith(session.sessionId, prev, 0);
+        return;
+      }
+
+      const { next, message } = resolveTarget(controlId);
+
       /*
        * 还没开始办事时也允许逛应用：老人常常是先翻一翻再问。
        * 服务、我的、教育服务这类页面不依赖会话，先放开，
        * 免得「想看看我的办件」也被要求先说一句话。
        */
       if (!session) {
-        const { next, message } = resolveTarget(controlId);
         if (next) {
-          setScreenId(next);
-          setAttempts(0);
-          attemptsRef.current = 0;
+          goTo(next);
           return;
         }
         setToast(message ?? '请先说出您要办的事');
         return;
       }
+
       if (!action) {
+        /* 引导还没回来时，浏览类点击照样放行，别让人对着页面干等 */
+        if (next && isBrowseControl(controlId)) {
+          goTo(next);
+          return;
+        }
         setToast('稍等，我正在看屏幕');
         return;
       }
+
       if (action.targetControlId === controlId) {
         /* 人脸核验是护栏场景：AI 不代按，用户本人按了之后还要走真实核验流程 */
         if (action.guardrail === 'biometric') {
@@ -243,17 +296,24 @@ export function App() {
       if (controlId.startsWith('tab.')) {
         const { next: tabTarget } = resolveTarget(controlId);
         if (tabTarget) {
-          setScreenId(tabTarget);
-          setAttempts(0);
-          attemptsRef.current = 0;
+          goTo(tabTarget);
           await guideWith(session.sessionId, tabTarget, 0);
           return;
         }
       }
 
+      /*
+       * 浏览类入口（专区、清单、材料、代办）：点它是想看，不是走错。
+       * 只有真的进错专区（医保、临时救助）才算迷路，才需要纠偏话术。
+       */
+      if (next && isBrowseControl(controlId) && !TRAP_SCREENS.has(next)) {
+        goTo(next);
+        await guideWith(session.sessionId, next, 0);
+        return;
+      }
+
       /* 点错了：真实应用照常跳转，Agent 再把人拉回来（这才是要验证的能力） */
-      const { next: wrongNext, message } = resolveTarget(controlId);
-      if (!wrongNext) {
+      if (!next) {
         setToast(message ?? '这个入口本次演示未开放');
         return;
       }
@@ -261,10 +321,10 @@ export function App() {
       attemptsRef.current = nextAttempt;
       setAttempts(nextAttempt);
       setToast('走错了不要紧，我帮您绕回来');
-      setScreenId(wrongNext);
-      await guideWith(session.sessionId, wrongNext, nextAttempt, nextAttempt >= 3);
+      goTo(next);
+      await guideWith(session.sessionId, next, nextAttempt, nextAttempt >= 3);
     },
-    [session, action, screenId, advance, guideWith, speakOn],
+    [session, action, screenId, stack, advance, goTo, guideWith, speakOn],
   );
 
   const onField = useCallback((fieldId: string) => {
@@ -301,13 +361,19 @@ export function App() {
   }, [session]);
 
   const onBack = useCallback(async () => {
-    const parent = PARENT[screenId];
-    if (!parent || !session) return;
-    setScreenId(parent);
+    /* 栈里有就回栈顶，没有才退到写死的上级页 */
+    const prev = stack.at(-1) ?? PARENT[screenId];
+    if (!prev) return;
+    setStack((s) => s.slice(0, -1));
+    setScreenId(prev);
     setAttempts(0);
     attemptsRef.current = 0;
-    await guideWith(session.sessionId, parent, 0);
-  }, [screenId, session, guideWith]);
+    if (session) {
+      await guideWith(session.sessionId, prev, 0);
+    } else {
+      setAction(null);
+    }
+  }, [stack, screenId, session, guideWith]);
 
   const startListening = useCallback(
     (onText: (text: string) => void) => {
@@ -344,6 +410,15 @@ export function App() {
   const screen = useMemo(() => SCREENS[screenId], [screenId]);
   const started = Boolean(session && intent);
 
+  /** 求助话术：带着上下文去求助，老人在电话里不用从头解释 */
+  const helpScript = useMemo(() => {
+    const what = intent?.restated;
+    if (!what) {
+      return `我今年 78 岁，一个人住。我在手机上办事，找不到要办的那个入口，现在停在「${screen.title}」这一页，能不能麻烦您带带我。`;
+    }
+    return `我今年 78 岁，一个人住。我在手机上办「${what}」，卡在「${screen.title}」这一页，不知道该点哪里，麻烦您帮我看看。`;
+  }, [intent, screen]);
+
   /* 模型通道徽标：必须反映真实健康状态，不能只报「配了密钥」 */
   const llmBadge = useMemo(() => {
     if (!meta) return { tone: 'badge', text: '检测中' };
@@ -374,10 +449,11 @@ export function App() {
               highlightId={action?.targetControlId}
               values={values}
               errors={errors}
+              size={fontLarge ? 'large' : 'normal'}
               onControl={(id) => void onControl(id)}
               onField={onField}
-              {...(started && PARENT[screenId] ? { onBack: () => void onBack() } : {})}
-              {...(TAB_SCREEN[screenId] ? { activeTabId: TAB_SCREEN[screenId] } : {})}
+              {...(stack.length > 0 || PARENT[screenId] ? { onBack: () => void onBack() } : {})}
+              activeTabId={TAB_OF[screenId] ?? (stack.length > 0 ? TAB_OF[stack[stack.length - 1] as ScreenId] : undefined)}
             />
           </PhoneFrame>
         </section>
@@ -549,6 +625,42 @@ export function App() {
                 复制话术
               </button>
               <button className="btn-soft" onClick={() => setRescue(null)} type="button">
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {helpOpen && (
+        <div className="modal-mask" onClick={() => setHelpOpen(false)}>
+          <div className="modal" onClick={(event) => event.stopPropagation()}>
+            <h3>找个人帮您</h3>
+            <p className="modal-note">说不清也不要紧，把下面这段话念给对方听就行。</p>
+            <div className="help-rows">
+              <a className="help-row" href="tel:12345">
+                <span className="help-name">政务热线 12345</span>
+                <span className="help-sub">7×24 小时 · 可转人工帮办</span>
+              </a>
+              <a className="help-row" href="tel:059187600123">
+                <span className="help-name">社区帮办员 林秀英</span>
+                <span className="help-sub">鼓楼区军门社区 · 工作日 9:00—17:00</span>
+              </a>
+            </div>
+            <p className="help-script-label">念这段：</p>
+            <blockquote>{helpScript}</blockquote>
+            <div className="modal-actions">
+              <button
+                className="btn-soft btn-soft-accent"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(helpScript);
+                  setToast('已复制，可以发给家人');
+                }}
+                type="button"
+              >
+                复制话术
+              </button>
+              <button className="btn-soft" onClick={() => setHelpOpen(false)} type="button">
                 关闭
               </button>
             </div>

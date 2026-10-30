@@ -1,4 +1,4 @@
-import type { Control, ScreenModel } from './types';
+import type { Control, ScreenBlock, ScreenId, ScreenModel } from './types';
 
 /**
  * 屏幕库（演示环境）
@@ -18,7 +18,17 @@ const c = (id: string, label: string, role: Control['role'], hint?: string, risk
   ...(risky ? { risky } : {}),
 });
 
-export const SCREENS: Record<ScreenModel['id'], ScreenModel> = {
+/**
+ * 底部导航三件套。
+ *
+ * 这一组在所有页面复用同一个 id，是因为它们是「同一台手机的同一条导航栏」——
+ * 用户不管在哪一层，抬头都能看见、都能点，不会出现「进了详情页就出不来」。
+ */
+export const APP_TABS: Control[] = [c('tab.index', '首页', 'tab'), c('tab.service', '服务', 'tab'), c('tab.mine', '我的', 'tab')];
+
+const TABS = (): Control[] => APP_TABS;
+
+const CORE_SCREENS = {
   /* ─────────── 政务服务平台 · 首页 ─────────── */
   'gov.home': {
     id: 'gov.home',
@@ -48,7 +58,7 @@ export const SCREENS: Record<ScreenModel['id'], ScreenModel> = {
       },
       { type: 'notice', id: 'home.notice', tone: 'info', text: '系统维护公告：10月31日 00:00-02:00 部分服务暂停' },
     ],
-    tabs: [c('tab.index', '首页', 'tab'), c('tab.service', '服务', 'tab'), c('tab.mine', '我的', 'tab')],
+    tabs: TABS(),
     traps: ['误点「医保服务」，进入后无低保入口', '误点「更多服务」，进入全部服务长列表，需二次查找'],
   },
 
@@ -71,18 +81,6 @@ export const SCREENS: Record<ScreenModel['id'], ScreenModel> = {
           c('service.item.utility', '生活缴费', 'listItem', '最近使用 · 水费/电费/燃气'),
         ],
       },
-      { type: 'text', id: 'service.topic.title', title: '按人生阶段找', paragraphs: [] },
-      {
-        type: 'list',
-        id: 'service.topic',
-        items: [
-          c('service.topic.birth', '出生一件事', 'listItem', '出生医学证明、户口登记、医保参保'),
-          c('service.topic.school', '上学一件事', 'listItem', '入学报名、学籍、助学贷款'),
-          c('service.topic.work', '工作一件事', 'listItem', '就业登记、社保参保、技能培训'),
-          c('service.topic.retire', '退休一件事', 'listItem', '养老待遇申领、医保关系转移'),
-          c('service.topic.pass', '身后一件事', 'listItem', '待遇停发、丧葬补助、账户注销'),
-        ],
-      },
       {
         type: 'grid',
         id: 'service.grid',
@@ -98,9 +96,21 @@ export const SCREENS: Record<ScreenModel['id'], ScreenModel> = {
           c('service.grid.gengduo', '全部服务', 'icon'),
         ],
       },
+      { type: 'text', id: 'service.topic.title', title: '按人生阶段找', paragraphs: [] },
+      {
+        type: 'list',
+        id: 'service.topic',
+        items: [
+          c('service.topic.birth', '出生一件事', 'listItem', '出生医学证明、户口登记、医保参保'),
+          c('service.topic.school', '上学一件事', 'listItem', '入学报名、学籍、助学贷款'),
+          c('service.topic.work', '工作一件事', 'listItem', '就业登记、社保参保、技能培训'),
+          c('service.topic.retire', '退休一件事', 'listItem', '养老待遇申领、医保关系转移'),
+          c('service.topic.pass', '身后一件事', 'listItem', '待遇停发、丧葬补助、账户注销'),
+        ],
+      },
       { type: 'notice', id: 'service.notice', tone: 'info', text: '本月新增：高龄老人津贴「免申即享」试点，符合条件的老人无需申请，津贴直接发放到社保卡。' },
     ],
-    tabs: [c('tab.index', '首页', 'tab'), c('tab.service', '服务', 'tab'), c('tab.mine', '我的', 'tab')],
+    tabs: TABS(),
     traps: ['「上学一件事」里没有低保入口，误点后需返回'],
   },
 
@@ -150,13 +160,13 @@ export const SCREENS: Record<ScreenModel['id'], ScreenModel> = {
         items: [c('mine.family.daughter', '女儿 王丽', 'listItem', '已授权代办 · 可代查办件进度')],
       },
       {
-        type: 'actions',
+        type: 'list',
         id: 'mine.actions',
-        items: [c('mine.action.font', '字体调大', 'link'), c('mine.action.help', '联系客服', 'link')],
+        items: [c('mine.action.font', '字体调大', 'listItem', '点一下，字就变大'), c('mine.action.help', '联系客服', 'listItem', '12345 热线 · 社区帮办员')],
       },
       { type: 'notice', id: 'mine.notice', tone: 'warn', text: '您的低保证明将于 12 月 31 日到期，到期前可在「我的材料」里重新上传。' },
     ],
-    tabs: [c('tab.index', '首页', 'tab'), c('tab.service', '服务', 'tab'), c('tab.mine', '我的', 'tab')],
+    tabs: TABS(),
     traps: [],
   },
 
@@ -184,6 +194,7 @@ export const SCREENS: Record<ScreenModel['id'], ScreenModel> = {
       },
       { type: 'notice', id: 'edu.notice', tone: 'info', text: '2026 年秋季入学报名将于 5 月 6 日开放，可提前在「我的材料」里准备好户口簿与房产证明。' },
     ],
+    tabs: TABS(),
     traps: [],
   },
 
@@ -225,6 +236,7 @@ export const SCREENS: Record<ScreenModel['id'], ScreenModel> = {
         ],
       },
     ],
+    tabs: TABS(),
     traps: ['误点「临时救助申请」（同样带「救助」字样），进入后才发现不是复核'],
   },
 
@@ -462,10 +474,360 @@ export const SCREENS: Record<ScreenModel['id'], ScreenModel> = {
     id: 'utility.done',
     app: '生活缴费',
     title: '缴费成功',
-    semantics: '缴费成功页。',
+    semantics: '缴费成功页，展示缴费金额与订单号，并提供返回首页的入口。',
     blocks: [{ type: 'result', id: 'utility.done.result', title: '缴费成功', lines: ['金额：128.40 元', '订单号：SF20261029008812'] }],
   },
+} satisfies Record<string, ScreenModel>;
+
+/* ────────────────────────── 服务大厅的第二层：主题专区 ────────────────────────── */
+
+/**
+ * 主题专区的数据描述。
+ *
+ * 服务大厅的宫格、人生阶段、全部服务，点进去都是「同类事项的清单页」，
+ * 结构完全一样，只有标题和条目不同。与其手写十几份样板，不如描述数据、统一生成——
+ * 屏幕模型的形状一旦统一，Agent 读屏也就稳定。
+ */
+interface TopicSpec {
+  id: ScreenId;
+  title: string;
+  semantics: string;
+  /** 分区标题，告诉用户这页是按什么分的 */
+  lead: string;
+  items: Array<{ key: string; label: string; hint?: string }>;
+  notice?: { tone: 'info' | 'warn' | 'danger'; text: string };
+}
+
+const TOPIC_SPECS = [
+  {
+    id: 'gov.all',
+    title: '全部服务',
+    semantics: '全部服务总入口，按主题分组的完整清单，含社会救助、社会保险、医保、户籍、教育、公积金、税务，并可直接进入四条已接入流程。',
+    lead: '按主题找',
+    items: [
+      { key: 'minzheng', label: '民政与救助', hint: '低保、特困、临时救助、高龄津贴' },
+      { key: 'shebao', label: '社会保险', hint: '养老、工伤、失业、社保卡' },
+      { key: 'yibao', label: '医疗保险', hint: '参保、异地就医、报销' },
+      { key: 'huji', label: '户籍与身份证', hint: '户口簿、迁入迁出、居住证' },
+      { key: 'edu', label: '教育服务', hint: '入学、学籍、助学贷款' },
+      { key: 'gongjijin', label: '公积金', hint: '提取、贷款、缴存明细' },
+      { key: 'shuwu', label: '税务服务', hint: '个税、发票、完税证明' },
+    ],
+    notice: { tone: 'info', text: '清单里找不到，直接说一句要办的事，我帮您找入口。' },
+  },
+  {
+    id: 'topic.shebao',
+    title: '社会保险',
+    semantics: '社会保险专区，含养老待遇资格认证、社保卡挂失、缴费记录查询、关系转移等事项。',
+    lead: '社保高频事项',
+    items: [
+      { key: 'pension', label: '养老待遇领取资格认证', hint: '每年一次 · 刷脸即可' },
+      { key: 'card', label: '社会保障卡挂失', hint: '丢失后先挂失再补办' },
+      { key: 'record', label: '社保缴费记录查询', hint: '近五年缴费明细' },
+      { key: 'transfer', label: '养老保险关系转移', hint: '跨省就业时办理' },
+      { key: 'injury', label: '工伤保险待遇申领', hint: '需先做工伤认定' },
+    ],
+    notice: { tone: 'warn', text: '资格认证逾期会暂停发放养老金，建议每年固定一个月办理。' },
+  },
+  {
+    id: 'topic.huji',
+    title: '户籍与身份证',
+    semantics: '户籍与身份证专区，含户口簿补办、户籍证明、迁出迁入、身份证换领、居住证办理。',
+    lead: '户籍高频事项',
+    items: [
+      { key: 'book', label: '居民户口簿补办', hint: '遗失或损坏后办理' },
+      { key: 'cert', label: '户籍证明开具', hint: '就学、公证等场景使用' },
+      { key: 'move', label: '户口迁出迁入', hint: '需迁入地准迁证' },
+      { key: 'idcard', label: '居民身份证换领', hint: '到期前六个月可办' },
+      { key: 'resident', label: '居住证办理', hint: '连续居住满半年' },
+    ],
+  },
+  {
+    id: 'topic.gongjijin',
+    title: '公积金',
+    semantics: '住房公积金专区，含提取、贷款、缴存明细查询与异地转移接续。',
+    lead: '公积金高频事项',
+    items: [
+      { key: 'withdraw', label: '住房公积金提取', hint: '租房、购房、退休均可提取' },
+      { key: 'loan', label: '公积金贷款申请', hint: '需连续缴存满六个月' },
+      { key: 'query', label: '缴存明细查询', hint: '按月查看单位与个人缴存额' },
+      { key: 'transfer', label: '异地转移接续', hint: '换城市工作时办理' },
+    ],
+  },
+  {
+    id: 'topic.shuwu',
+    title: '税务服务',
+    semantics: '税务服务专区，含个人所得税查询、发票查验、完税证明开具。',
+    lead: '办税高频事项',
+    items: [
+      { key: 'tax', label: '个人所得税记录查询', hint: '收入与已缴税额' },
+      { key: 'invoice', label: '发票查验', hint: '输入发票代码与号码' },
+      { key: 'proof', label: '完税证明开具', hint: '贷款、公证常用' },
+      { key: 'declare', label: '专项附加扣除填报', hint: '赡养老人、大病医疗' },
+    ],
+  },
+  {
+    id: 'topic.birth',
+    title: '出生一件事',
+    semantics: '出生一件事联办页，一次填报可联办出生医学证明、新生儿户口登记、城乡居民医保参保、生育津贴申领、预防接种证。',
+    lead: '一次填报，五件事一起办',
+    items: [
+      { key: 'cert', label: '出生医学证明', hint: '出生后一个月内申领' },
+      { key: 'hukou', label: '新生儿户口登记', hint: '随父或随母登记' },
+      { key: 'insurance', label: '城乡居民医保参保', hint: '出生当年免费参保' },
+      { key: 'allowance', label: '生育津贴申领', hint: '需参保满规定月数' },
+      { key: 'vaccine', label: '预防接种证办理', hint: '与户口登记联办' },
+    ],
+    notice: { tone: 'info', text: '联办需要父母双方身份证、结婚证与出生医学证明，缺一项会退回补正。' },
+  },
+  {
+    id: 'topic.school',
+    title: '上学一件事',
+    semantics: '上学一件事联办页，含义务教育入学报名、学籍查询、生源地助学贷款、学生资助申请、学区查询。',
+    lead: '入学与资助',
+    items: [
+      { key: 'enroll', label: '义务教育入学报名', hint: '每年 5—7 月，按学区报名' },
+      { key: 'student', label: '学籍信息查询', hint: '需学生本人实名' },
+      { key: 'loan', label: '生源地助学贷款', hint: '学生与共同借款人需到场' },
+      { key: 'aid', label: '学生资助申请', hint: '家庭经济困难学生' },
+      { key: 'school', label: '学校与学区查询', hint: '按地址查对口学校' },
+    ],
+  },
+  {
+    id: 'topic.work',
+    title: '工作一件事',
+    semantics: '工作一件事联办页，含就业登记、职工社保参保、技能培训报名、失业保险金申领。',
+    lead: '就业与参保',
+    items: [
+      { key: 'register', label: '就业登记', hint: '入职或灵活就业时登记' },
+      { key: 'insurance', label: '职工社会保险参保', hint: '由单位申报或个人参保' },
+      { key: 'training', label: '职业技能培训报名', hint: '政府补贴项目免费' },
+      { key: 'unemployment', label: '失业保险金申领', hint: '需缴满一年且非本人意愿失业' },
+    ],
+  },
+  {
+    id: 'topic.retire',
+    title: '退休一件事',
+    semantics: '退休一件事联办页，含养老待遇申领、待遇领取资格认证、医保关系转移、退休证办理。',
+    lead: '退休前后要办的事',
+    items: [
+      { key: 'pension', label: '养老待遇申领', hint: '达到法定退休年龄时办理' },
+      { key: 'qualify', label: '待遇领取资格认证', hint: '退休后每年一次' },
+      { key: 'medical', label: '医保关系转移', hint: '异地安置时办理' },
+      { key: 'cert', label: '退休证办理', hint: '部分场景需要纸质证明' },
+    ],
+    notice: { tone: 'warn', text: '资格认证逾期会暂停发放养老金，认证后恢复并补发。' },
+  },
+  {
+    id: 'topic.pass',
+    title: '身后一件事',
+    semantics: '身后一件事联办页，含待遇停发申报、丧葬补助申领、账户注销、遗产查询，建议家属陪同办理。',
+    lead: '家属可代为办理',
+    items: [
+      { key: 'stop', label: '待遇停发申报', hint: '避免多领需退回' },
+      { key: 'funeral', label: '丧葬补助申领', hint: '需死亡证明与火化证明' },
+      { key: 'account', label: '社保与银行账户注销', hint: '先结清再注销' },
+      { key: 'heritage', label: '遗产与存款查询', hint: '需继承关系证明' },
+    ],
+    notice: { tone: 'info', text: '这一组事项对家属情绪影响大，建议由家人陪同、一次只办一件。' },
+  },
+] satisfies TopicSpec[];
+
+function buildTopicScreen(spec: TopicSpec): ScreenModel {
+  const blocks: ScreenBlock[] = [
+    { type: 'search', id: `${spec.id}.search`, placeholder: `在${spec.title}里搜索` },
+    { type: 'text', id: `${spec.id}.lead`, title: spec.lead, paragraphs: [] },
+    {
+      type: 'list',
+      id: `${spec.id}.list`,
+      items: spec.items.map((item) => c(`${spec.id}.item.${item.key}`, item.label, 'listItem', item.hint)),
+    },
+  ];
+  if (spec.notice) blocks.push({ type: 'notice', id: `${spec.id}.notice`, tone: spec.notice.tone, text: spec.notice.text });
+  return { id: spec.id, app: '政务服务平台', title: spec.title, semantics: spec.semantics, blocks, tabs: TABS() };
+}
+
+function topicScreen(id: ScreenId): ScreenModel {
+  const spec = TOPIC_SPECS.find((item) => item.id === id);
+  if (!spec) throw new Error(`主题页缺少数据：${id}`);
+  return buildTopicScreen(spec);
+}
+
+/* ────────────────────────── 我的：办件、材料、家人代办 ────────────────────────── */
+
+interface DocSpec {
+  id: ScreenId;
+  title: string;
+  name: string;
+  status: string;
+  lines: string[];
+  notice?: { tone: 'info' | 'warn'; text: string };
+}
+
+function buildDocScreen(spec: DocSpec): ScreenModel {
+  const blocks: ScreenBlock[] = [
+    { type: 'text', id: `${spec.id}.info`, title: spec.name, paragraphs: [`状态：${spec.status}`, ...spec.lines] },
+  ];
+  if (spec.notice) blocks.push({ type: 'notice', id: `${spec.id}.notice`, tone: spec.notice.tone, text: spec.notice.text });
+  blocks.push({
+    type: 'actions',
+    id: `${spec.id}.actions`,
+    items: [c(`${spec.id}.btn.view`, '看原件', 'button'), c(`${spec.id}.btn.reupload`, '重新上传', 'button')],
+  });
+  return {
+    id: spec.id,
+    app: '政务服务平台',
+    title: spec.title,
+    semantics: `材料详情页：${spec.name}，当前${spec.status}，可查看原件或重新上传，底部有导航栏。`,
+    blocks,
+    tabs: TABS(),
+  };
+}
+
+const DOC_SPECS = [
+  {
+    id: 'mine.doc.idcard',
+    title: '居民身份证',
+    name: '居民身份证',
+    status: '已核验',
+    lines: ['有效期至 2032-06', '公安库核验通过，无需重复上传'],
+  },
+  {
+    id: 'mine.doc.hukou',
+    title: '居民户口簿',
+    name: '居民户口簿',
+    status: '已上传',
+    lines: ['上传时间：2026-03-12', '登记家庭人口：1 人', '户号：350102****0113'],
+  },
+  {
+    id: 'mine.doc.dibao',
+    title: '低保证明',
+    name: '最低生活保障证明',
+    status: '已上传',
+    lines: ['开具单位：福州市鼓楼区民政局', '开具时间：2026-03-12', '有效期至 2026-12-31'],
+    notice: { tone: 'warn' as const, text: '这份证明 12 月 31 日到期，到期前重新上传，否则复核会被退回。' },
+  },
+  {
+    id: 'mine.doc.bank',
+    title: '本人银行卡',
+    name: '社会保障卡金融账户',
+    status: '已绑定',
+    lines: ['开户行：中国农业银行福州鼓楼支行', '卡号尾号：6621', '低保金与津贴发放到此账户'],
+  },
+] satisfies DocSpec[];
+
+function docScreen(id: ScreenId): ScreenModel {
+  const spec = DOC_SPECS.find((item) => item.id === id);
+  if (!spec) throw new Error(`材料页缺少数据：${id}`);
+  return buildDocScreen(spec);
+}
+
+const MY_SCREENS = {
+  'mine.elder': {
+    id: 'mine.elder',
+    app: '政务服务平台',
+    title: '高龄老人津贴申请',
+    semantics: '办件进度页：高龄老人津贴申请审核中，展示办件编号、申请时间、预计办结与津贴标准，底部有联系客服与返回我的。',
+    blocks: [
+      {
+        type: 'text',
+        id: 'elder.text',
+        title: '审核中',
+        paragraphs: ['办件编号：FZ2026102700158', '申请时间：2026年10月27日', '预计办结：2026年11月8日前', '津贴标准：80—89 周岁每人每月 100 元'],
+      },
+      { type: 'notice', id: 'elder.notice', tone: 'info', text: '审核期间不用再跑窗口。结果会发短信，也可以在这里查。' },
+      {
+        type: 'actions',
+        id: 'elder.actions',
+        items: [c('elder.btn.hotline', '进度有疑问，问客服', 'button'), c('elder.btn.back', '返回我的', 'link')],
+      },
+    ],
+    tabs: TABS(),
+  },
+
+  'mine.family': {
+    id: 'mine.family',
+    app: '政务服务平台',
+    title: '家人代办',
+    semantics: '家人代办授权页：已授权女儿王丽代办，列出授权范围（可代查办件、代填表单，不含刷脸与支付），底部有新增代办人与解除授权。',
+    blocks: [
+      {
+        type: 'text',
+        id: 'family.owner',
+        title: '女儿 王丽',
+        paragraphs: ['已实名 · 手机号 138****6021', '授权时间：2026年3月12日', '最近代办：2026年10月28日 帮您查低保复核进度'],
+      },
+      {
+        type: 'text',
+        id: 'family.scope',
+        title: '她能替您做什么',
+        paragraphs: ['可以：查办件进度、接收结果通知、帮您填表与上传材料', '不可以：代替您刷脸、代替您输支付密码'],
+      },
+      { type: 'notice', id: 'family.notice', tone: 'info', text: '授权随时可以取消。取消后她看不到您的办件信息。' },
+      {
+        type: 'actions',
+        id: 'family.actions',
+        items: [c('family.action.add', '新增代办人', 'button'), c('family.action.revoke', '解除授权', 'button', undefined, true)],
+      },
+    ],
+    tabs: TABS(),
+  },
+
+  'gov.todo': {
+    id: 'gov.todo',
+    app: '政务服务平台',
+    title: '这一项还没接入',
+    semantics: '演示范围说明页：当前入口对应的事项尚未接入本次演示，页面提供人工求助与返回，用户不会卡在死路上。',
+    blocks: [
+      {
+        type: 'text',
+        id: 'todo.text',
+        title: '这件事暂时没有接入演示',
+        paragraphs: [
+          '演示版完整接入了四条流程：低保复核、养老待遇资格认证、异地就医备案、生活缴费。',
+          '其他入口在真实产品里由对方 App 自己完成，我只负责读屏和指路，不会替您乱点。',
+          '您现在有三个选择：返回上一页继续找、打 12345 让人带着办、或者把要办的事说给我听。',
+        ],
+      },
+      { type: 'notice', id: 'todo.notice', tone: 'info', text: '您可以返回上一页继续找，或者把要办的事说给我听，我帮您判断该去哪个入口。' },
+      {
+        type: 'actions',
+        id: 'todo.actions',
+        items: [c('todo.btn.hotline', '打 12345 问', 'button'), c('todo.btn.back', '回到上一页', 'button')],
+      },
+    ],
+    tabs: TABS(),
+  },
+} satisfies Record<string, ScreenModel>;
+
+const RAW_SCREENS: Record<ScreenModel['id'], ScreenModel> = {
+  ...CORE_SCREENS,
+  ...MY_SCREENS,
+  'gov.all': topicScreen('gov.all'),
+  'topic.shebao': topicScreen('topic.shebao'),
+  'topic.huji': topicScreen('topic.huji'),
+  'topic.gongjijin': topicScreen('topic.gongjijin'),
+  'topic.shuwu': topicScreen('topic.shuwu'),
+  'topic.birth': topicScreen('topic.birth'),
+  'topic.school': topicScreen('topic.school'),
+  'topic.work': topicScreen('topic.work'),
+  'topic.retire': topicScreen('topic.retire'),
+  'topic.pass': topicScreen('topic.pass'),
+  'mine.doc.idcard': docScreen('mine.doc.idcard'),
+  'mine.doc.hukou': docScreen('mine.doc.hukou'),
+  'mine.doc.dibao': docScreen('mine.doc.dibao'),
+  'mine.doc.bank': docScreen('mine.doc.bank'),
 };
+
+/**
+ * 底部导航是「这台手机的固定部件」，不是某一页的内容。
+ *
+ * 所以统一在这里补：任何一页——包括表单、风控弹窗、结果页——抬头都能看见
+ * 首页/服务/我的。老人不需要记住返回箭头在哪，也不会「进了死胡同出不来」。
+ */
+export const SCREENS: Record<ScreenModel['id'], ScreenModel> = Object.fromEntries(
+  Object.entries(RAW_SCREENS).map(([id, screen]) => [id, screen.tabs?.length ? screen : { ...screen, tabs: APP_TABS }]),
+) as Record<ScreenModel['id'], ScreenModel>;
 
 /** 屏幕可达性：用于校验「Agent 指向的控件是否真实存在」 */
 export const SCREEN_CONTROL_INDEX: Record<string, Set<string>> = Object.fromEntries(

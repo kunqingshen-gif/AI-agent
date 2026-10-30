@@ -43,10 +43,18 @@ input {
 
 /* ─────────────── 顶部栏 ─────────────── */
 
+/*
+ * 整页锁定为一屏控制台：手机、控制台、指标栏各占自己的一块，
+ * 谁都不会盖住谁。
+ *
+ * 之前指标栏用 sticky bottom，窗口一矮就把手机底部标签栏压住，
+ * 用户点不到「服务 / 我的」，看起来就像「只有首页能点」。
+ */
 .app {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .topbar {
@@ -133,19 +141,21 @@ input {
 
 .stage {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   display: grid;
   grid-template-columns: 424px minmax(0, 1fr);
   gap: 26px;
   width: 100%;
   max-width: 1240px;
   margin: 0 auto;
-  padding: 24px 28px 12px;
+  padding: 16px 28px 12px;
   align-items: start;
 }
 
 .phone-col {
   position: sticky;
-  top: 86px;
+  top: 0;
 }
 
 /* ─────────────── 手机外壳 ─────────────── */
@@ -158,7 +168,12 @@ input {
 
 .phone {
   width: 392px;
-  height: 748px;
+  /*
+   * 高度跟着视口走：笔记本外接屏、投影仪、浏览器缩放都会让可用高度变矮，
+   * 写死 748px 就会被底部指标栏压掉一截——底部标签栏正好在那截里，
+   * 看起来就像「服务/我的点不动」。留出 250px 给顶栏、指标栏与说明文字。
+   */
+  height: clamp(520px, calc(100vh - 222px), 748px);
   background: #0d1117;
   border-radius: 46px;
   padding: 10px;
@@ -241,7 +256,7 @@ input {
 }
 
 .phone-caption {
-  margin: 12px 0 0;
+  margin: 8px 0 0;
   font-size: 12px;
   color: var(--ink-3);
   text-align: center;
@@ -322,6 +337,7 @@ input {
 
 .app-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px;
   display: flex;
@@ -335,6 +351,19 @@ input {
  */
 .app-body > * {
   flex: 0 0 auto;
+}
+
+
+/* 内容超过一屏时，下沿渐隐，暗示还能往下翻——比突然被截断好懂 */
+.screen::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 52px;
+  height: 26px;
+  background: linear-gradient(to bottom, rgba(247, 249, 252, 0), #f7f9fc);
+  pointer-events: none;
 }
 
 .app-tabs {
@@ -587,14 +616,22 @@ input {
   border-color: var(--line);
 }
 
-.btn-risky::after {
-  content: '';
+/* 破坏性操作不该长得像「主按钮」：白底红字，配「需本人确认」角标 */
+.btn-destructive {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: #f2c6c0;
+}
+
+.btn-destructive:hover {
+  background: #ffe9e5;
 }
 
 .btn-lock {
   position: absolute;
-  top: -8px;
-  right: 10px;
+  top: -7px;
+  right: 12px;
+  white-space: nowrap;
   background: var(--danger);
   color: #fff;
   font-size: 10px;
@@ -1178,10 +1215,8 @@ input {
 .metrics {
   background: #fff;
   border-top: 1px solid var(--line);
-  padding: 14px 28px 18px;
-  position: sticky;
-  bottom: 0;
-  z-index: 30;
+  padding: 10px 28px 12px;
+  flex: 0 0 auto;
 }
 
 .metrics-head {
@@ -1311,6 +1346,102 @@ input {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
+}
+
+/* ─────────────── 客服弹窗 ─────────────── */
+
+.help-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.help-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fbfcfe;
+  text-decoration: none;
+}
+
+.help-row:hover {
+  border-color: var(--blue);
+  background: #f5f9ff;
+}
+
+.help-name {
+  font-size: 14.5px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.help-sub {
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+.help-script-label {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+/* ─────────────── 字号档位：调大是真的变大 ─────────────── */
+
+.screen-large .app-title {
+  font-size: 19px;
+}
+
+.screen-large .search {
+  font-size: 14px;
+  padding: 11px 14px;
+}
+
+.screen-large .tile-label {
+  font-size: 13px;
+}
+
+.screen-large .list-label {
+  font-size: 17px;
+}
+
+.screen-large .list-hint {
+  font-size: 14px;
+}
+
+.screen-large .text-block h4 {
+  font-size: 16px;
+}
+
+.screen-large .text-block p {
+  font-size: 15px;
+  line-height: 1.8;
+}
+
+.screen-large .notice {
+  font-size: 16px;
+}
+
+.screen-large .field-label,
+.screen-large .field-value,
+.screen-large .field-placeholder {
+  font-size: 15px;
+}
+
+.screen-large .btn {
+  font-size: 16px;
+}
+
+.screen-large .tab {
+  font-size: 13.5px;
+}
+
+.screen-large .profile-name {
+  font-size: 17px;
 }
 
 .toast {

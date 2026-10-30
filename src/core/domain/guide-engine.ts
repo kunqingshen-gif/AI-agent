@@ -47,6 +47,13 @@ function isSatisfied(node: FlowNode, slots: RuleInput['slots'], completed: Reado
   return completed.has(node.id);
 }
 
+/** 三个「逛店」页面：在这里不算走错，只是先看看别的 */
+const BROWSE_HUB_NAME: Partial<Record<ScreenId, string>> = {
+  'gov.home': '首页',
+  'gov.service': '服务大厅',
+  'gov.mine': '我的',
+};
+
 function trapMessage(flow: TaskFlow, screenId: ScreenId): string | null {
   if (screenId === 'wrong.insurance') {
     return '您现在在「医保服务」里，这里没有办低保的地方。按左上角返回，我重新带您走。';
@@ -82,11 +89,22 @@ export function decide(input: RuleInput): RuleDecision {
 
   /* 人走到了别的屏幕：先纠偏 */
   if (node.screenId !== screenId) {
+    /*
+     * 底部三个标签是「逛店」，不是「走错」。
+     * 老人办到一半想看看我的办件，是完全合理的动作——不能骂他走岔了，
+     * 只需说清「怎么回去」，顺便允许他看完再回来。
+     */
+    const hub = BROWSE_HUB_NAME[screenId];
     const trap = trapMessage(flow, screenId);
+    const message =
+      trap ??
+      (hub
+        ? `您在看${hub}。要继续办${flow.title}，按左上角返回就行；想先看看别的也没问题，看完记得回来。`
+        : '您离开了办理页面。按左上角返回，我们回到刚才那一步。');
     const rescue: RescueHint = {
       triggered: true,
       kind: trap ? 'wrong-screen' : 'stuck',
-      message: trap ?? '您离开了办理页面。按左上角返回，我们回到刚才那一步。',
+      message,
       ...(trap
         ? {
             script: `您好，我在手机上办${flow.title}，现在找不到入口，页面停在别的服务里，能不能麻烦您告诉我从首页哪个位置进去？`,
@@ -95,8 +113,8 @@ export function decide(input: RuleInput): RuleDecision {
     };
     return {
       kind: 'back',
-      instruction: rescue.message,
-      speak: trap ? '走错了，按返回。' : '按左上角返回。',
+      instruction: message,
+      speak: trap ? '走错了，按返回。' : hub ? `想看别的没关系，回来按左上角。` : '按左上角返回。',
       reason: `当前屏幕 ${screenId} 与应到达的 ${node.screenId} 不一致`,
       stepLabel: `第 ${progress.index} 步 / 共 ${total} 步`,
       progress,

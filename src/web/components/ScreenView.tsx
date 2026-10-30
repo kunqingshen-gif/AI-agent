@@ -11,6 +11,8 @@ interface Props {
   onBack?: () => void;
   /** 当前应高亮的底部标签 id（默认第一个） */
   activeTabId?: string;
+  /** 字号档位：老人把「字体调大」拨到开，界面文字真的会变大 */
+  size?: 'normal' | 'large';
 }
 
 const TILE_COLORS = ['#2f6fd0', '#2c8f7a', '#b46a2c', '#8a5cb8', '#c04b52', '#1f7fae', '#5a7d2a', '#a2562f'];
@@ -46,7 +48,7 @@ function Target({ active, children }: { active: boolean; children: ReactNode }) 
   );
 }
 
-export function ScreenView({ screen, highlightId, values, errors, onControl, onField, onBack, activeTabId }: Props) {
+export function ScreenView({ screen, highlightId, values, errors, onControl, onField, onBack, activeTabId, size = 'normal' }: Props) {
   const isTarget = (id: string) => highlightId === id;
 
   const renderControl = (item: Control) => {
@@ -73,11 +75,13 @@ export function ScreenView({ screen, highlightId, values, errors, onControl, onF
     }
 
     if (item.role === 'button') {
-      const primary = !item.label.includes('取消') && !item.label.includes('不是我');
+      /* 破坏性操作（解除、注销、删除、取消）不该抢主按钮的位置 */
+      const destructive = ['解除', '注销', '删除', '取消', '不是我'].some((word) => item.label.includes(word));
+      const primary = !destructive;
       return (
         <Target key={item.id} active={isTarget(item.id)}>
           <button
-            className={`btn ${primary ? 'btn-primary' : 'btn-ghost'} ${item.risky ? 'btn-risky' : ''}`}
+            className={`btn ${primary ? 'btn-primary' : 'btn-ghost'} ${item.risky ? 'btn-risky' : ''}${destructive ? ' btn-destructive' : ''}`}
             onClick={() => onControl(item.id)}
             type="button"
           >
@@ -243,7 +247,7 @@ export function ScreenView({ screen, highlightId, values, errors, onControl, onF
   };
 
   return (
-    <div className="screen" role="region" aria-label={`应用界面：${screen.title}`}>
+    <div className={`screen${size === 'large' ? ' screen-large' : ''}`} role="region" aria-label={`应用界面：${screen.title}`}>
       <div className="app-bar">
         {onBack ? (
           <button className="app-back" onClick={onBack} type="button" aria-label="返回上一页">
