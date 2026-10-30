@@ -44,12 +44,19 @@ export function GuideCard({ action, loading, started, examples, onExample, onSpe
   const guardrail = action.guardrail ? GUARDRAIL_COPY[action.guardrail] : null;
 
   return (
-    <section className={`card card-guide ${loading ? 'is-loading' : ''}`}>
+    <section className={`card card-guide ${loading ? 'is-loading' : ''}`} aria-live="polite" aria-busy={loading}>
       <div className="card-head">
         <span className="step-chip">{action.stepLabel}</span>
         <span className={`source-chip source-${action.source}`}>{action.source === 'llm' ? '模型生成' : '规则兜底'}</span>
         {action.progress.total > 0 && (
-          <div className="progress">
+          <div
+            className="progress"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={action.progress.total}
+            aria-valuenow={action.progress.index}
+            aria-label="办理进度"
+          >
             <div className="progress-bar" style={{ width: `${(action.progress.index / action.progress.total) * 100}%` }} />
           </div>
         )}
@@ -57,10 +64,16 @@ export function GuideCard({ action, loading, started, examples, onExample, onSpe
 
       <p className="instruction">{action.instruction}</p>
 
-      <div className="guide-actions">
-        <button className="btn-soft" onClick={onSpeak} type="button">
-          再听一遍
-        </button>
+      <div className="guide-actions" role="group" aria-label="可用操作">
+        {action.speak ? (
+          <button className="btn-soft" onClick={onSpeak} type="button" aria-label="再听一遍这条指引">
+            再听一遍
+          </button>
+        ) : (
+          <span className="text-mode" role="note">
+            纯文字模式
+          </span>
+        )}
         {action.prefill && action.fieldId && (
           <button className="btn-soft btn-soft-accent" onClick={onPrefill} type="button">
             自动填：{action.prefill.value.length > 12 ? `${action.prefill.value.slice(0, 6)}…` : action.prefill.value}

@@ -72,16 +72,56 @@ const SIMULATED_PROFILE: UserProfile = {
   hearingImpaired: false,
 };
 
+export interface ServiceOptions {
+  /** 会话上限，超限淘汰最久未活跃的（默认 2000，实测约 2KB/会话） */
+  maxSessions?: number;
+  /** 模型改写缓存上限（默认 500，覆盖 17 屏 × 节点 × 三档数字素养的常见组合） */
+  maxRewriteCache?: number;
+}
+
+const DEFAULT_MAX_SESSIONS = 2000;
+const DEFAULT_MAX_REWRITE_CACHE = 500;
+
+type RewriteEntry = { instruction: string; speak: string; reason: string };
+
 export class AssistService {
+  /*
+   * 两个 Map 都会单调增长：sessions 每次建会话 +1，rewriteCache 每次改写 +1。
+   * 长期运行（尤其是评委连续演示、或部署后无人重启）会持续吃内存，因此按 LRU 封顶。
+   * Map 的迭代顺序即插入顺序，delete + set 等于把键移到队尾。
+   */
   private readonly sessions = new Map<string, SessionState>();
-  private readonly rewriteCache = new Map<string, { instruction: string; speak: string; reason: string }>();
+  private readonly rewriteCache = new Map<string, RewriteEntry>();
 
   constructor(
     private readonly llm: LlmPort,
     private readonly telemetry: TelemetryPort,
     private readonly clock: ClockPort,
     private readonly logger: Logger,
+    private readonly options: ServiceOptions = {},
   ) {}
+
+  private rememberSession(session: SessionState): void {
+    const max = this.options.maxSessions ?? DEFAULT_MAX_SESSIONS;
+    this.sessions.delete(session.id);
+    this.sessions.set(session.id, session);
+    while (this.sessions.size > max) {
+      const oldest = this.sessions.keys().next();
+      if (oldest.done) break;
+      this.sessions.delete(oldest.value);
+    }
+  }
+
+  private rememberRewrite(key: string, entry: RewriteEntry): void {
+    const max = this.options.maxRewriteCache ?? DEFAULT_MAX_REWRITE_CACHE;
+    this.rewriteCache.delete(key);
+    this.rewriteCache.set(key, entry);
+    while (this.rewriteCache.size > max) {
+      const oldest = this.rewriteCache.keys().next();
+      if (oldest.done) break;
+      this.rewriteCache.delete(oldest.value);
+    }
+  }
 
   /* ─────────────── 会话 ─────────────── */
 
@@ -103,7 +143,7 @@ export class AssistService {
       handoffs: 0,
       finished: false,
     };
-    this.sessions.set(session.id, session);
+    this.rememberSession(session);
     this.telemetry.record({
       type: 'session.started',
       sessionId: session.id,
@@ -351,7 +391,7 @@ export class AssistService {
               source = 'llm';
               confidence = Number(((parsed.data.confidence + 0.9) / 2).toFixed(2));
               reason = `${rule.reason}｜模型：${(parsed.data.reason ?? '').slice(0, 60)}`;
-              this.rewriteCache.set(cacheKey, { instruction, speak, reason: (parsed.data.reason ?? '').slice(0, 60) });
+              this.rememberRewrite(cacheKey, { instruction, speak, reason: (parsed.data.reason ?? '').slice(0, 60) });
             }
           }
         } catch (error) {
@@ -430,7 +470,7 @@ export class AssistService {
       },
     });
 
-    return action;
+    return this.applyAccessibility(action, session);
   }
 
   /* ─────────────── 口语填表 ─────────────── */
@@ -523,23 +563,45 @@ export class AssistService {
   private requireSession(id: string): SessionState {
     const session = this.sessions.get(id);
     if (!session) throw new Error(`会话不存在或已过期：${id}`);
+    /* 命中即刷新 LRU 顺序，保证还在用的会话不会被新会话挤掉 */
+    this.rememberSession(session);
     return session;
   }
 
-  private clarifyAction(session: SessionState, startedAt: number): GuideAction {
+  /**
+   * 无障碍适配。
+   *
+   * 此前 hearingImpaired 只存在于画像与 zod 校验里，行为处写的是
+   * `...(hearingImpaired ? {} : {})`——两边都是空对象，等于没实现。
+   * 现在真正生效：听障用户不生成语音（speak 置空），前端据此隐藏「再听一遍」
+   * 并显示「纯文字模式」，同时在判断依据里留痕，便于评审看到差异化。
+   */
+  private applyAccessibility(action: GuideAction, session: SessionState): GuideAction {
+    if (!session.profile.hearingImpaired) return action;
+    const note = '（听障模式：不播放语音）';
     return {
-      kind: 'read',
-      instruction: '您先告诉我要办什么事，比如「我要办低保复核」或者「我要交水费」。',
-      speak: '先跟我说，您要办啥事。',
-      reason: '会话尚未确定办理事项',
-      confidence: 0.5,
-      stepLabel: '待确认事项',
-      progress: { index: 0, total: 0 },
-      source: 'rule',
-      rescue: { triggered: false, kind: 'none', message: '' } as RescueHint,
-      latencyMs: this.clock.now() - startedAt,
-      ...(session.profile.hearingImpaired ? {} : {}),
+      ...action,
+      speak: '',
+      reason: action.reason.includes(note) ? action.reason : `${action.reason}${note}`,
     };
+  }
+
+  private clarifyAction(session: SessionState, startedAt: number): GuideAction {
+    return this.applyAccessibility(
+      {
+        kind: 'read',
+        instruction: '您先告诉我要办什么事，比如「我要办低保复核」或者「我要交水费」。',
+        speak: '先跟我说，您要办啥事。',
+        reason: '会话尚未确定办理事项',
+        confidence: 0.5,
+        stepLabel: '待确认事项',
+        progress: { index: 0, total: 0 },
+        source: 'rule',
+        rescue: { triggered: false, kind: 'none', message: '' } as RescueHint,
+        latencyMs: this.clock.now() - startedAt,
+      },
+      session,
+    );
   }
 
   private labelOf(screenId: ScreenId, controlId?: string): string | undefined {

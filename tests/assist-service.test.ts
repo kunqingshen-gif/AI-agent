@@ -220,3 +220,51 @@ describe('编排层：指标', () => {
     expect(hotline).toContain('12345');
   });
 });
+
+describe('编排层：无障碍适配', () => {
+  it('听障用户不生成语音，并在判断依据里留痕', async () => {
+    const ctx = build(() => '{}');
+    const session = ctx.service.createSession({ displayName: '王秀兰', hearingImpaired: true });
+    await ctx.service.interpret(session.id, '我要办低保复核');
+
+    const action = await ctx.service.guide(session.id, guideReq(session.id, 'gov.home'));
+    expect(action.speak).toBe('');
+    expect(action.reason).toContain('听障模式');
+    /* 指引本身不能因为关掉语音而失效 */
+    expect(action.instruction.length).toBeGreaterThan(0);
+    expect(action.targetControlId).toBe('home.grid.minzheng');
+  });
+
+  it('未开启听障模式时仍正常生成语音，不受影响', async () => {
+    const { service, sessionId } = await started(() => '{}');
+    const action = await service.guide(sessionId, guideReq(sessionId, 'gov.home'));
+    expect(action.speak.length).toBeGreaterThan(0);
+    expect(action.reason).not.toContain('听障模式');
+  });
+});
+
+describe('编排层：内存上限', () => {
+  it('会话超过上限时淘汰最老的，避免内存单调增长', () => {
+    const service = new AssistService(new FakeLlm(() => '{}'), new InMemoryTelemetry(), clock, silentLogger, {
+      maxSessions: 3,
+    });
+    const ids = [0, 1, 2, 3].map(() => service.createSession().id);
+    expect(service.getSession(ids[0] as string)).toBeUndefined();
+    expect(service.getSession(ids[3] as string)).toBeDefined();
+  });
+
+  it('被访问过的会话刷新 LRU 顺序，不会被新会话挤掉', async () => {
+    const service = new AssistService(new FakeLlm(() => '{}'), new InMemoryTelemetry(), clock, silentLogger, {
+      maxSessions: 2,
+    });
+    const first = service.createSession().id;
+    const second = service.createSession().id;
+
+    /* 访问 first，使其成为最近使用 */
+    await service.guide(first, guideReq(first, 'gov.home'));
+
+    service.createSession(); // 触发淘汰
+    expect(service.getSession(first)).toBeDefined();
+    expect(service.getSession(second)).toBeUndefined();
+  });
+});

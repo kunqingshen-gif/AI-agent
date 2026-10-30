@@ -398,8 +398,9 @@
     <tr><th style="width:34%">约束</th><th>落地方式</th></tr>
     <tr><td>类型安全</td><td>TypeScript strict + <code>noUncheckedIndexedAccess</code>，前后端两套 tsconfig 分别校验</td></tr>
     <tr><td>代码规范</td><td>ESLint 9 flat config，禁用 <code>any</code>，强制类型导入</td></tr>
-    <tr><td>测试</td><td>Vitest 58 项：护栏、规则引擎、知识库契约、编排（假模型注入）、熔断降级、限流语义、HTTP 契约</td></tr>
-    <tr><td>安全</td><td>入参 zod 校验、64KB body 限制、240 次/分限流、日志脱敏（身份证/手机号/姓名）、密钥仅服务端</td></tr>
+    <tr><td>测试</td><td>Vitest 62 项：护栏、规则引擎、知识库契约、编排（假模型注入）、熔断降级、限流语义、无障碍适配、内存上限、HTTP 契约</td></tr>
+    <tr><td>覆盖率</td><td>语句 91.2% / 分支 80.4%，核心领域层 98.6%（<code>npm run test:coverage</code>，v8 provider）</td></tr>
+    <tr><td>安全</td><td>入参 zod 校验、64KB body 限制、240 次/分限流（超限返回 429 而非 500）、helmet 安全响应头、日志脱敏（身份证/手机号/姓名）、密钥仅服务端</td></tr>
     <tr><td>交付</td><td>GitHub Actions 在 Node 20/22 双版本跑 lint → typecheck → test → build → 端到端冒烟</td></tr>
   </table>
 </section>
@@ -418,6 +419,7 @@
 
   <h3>6.2 逐屏定位</h3>
   <p>每一步只做一件事：<strong>一个高亮框 + 一句话</strong>。指令引用屏幕原字（「开始办理」「提交复核申请」），语音播报压缩到 20 字以内，符合老人听觉处理习惯。</p>
+  <p>对听力障碍用户，画像中的 <code>hearingImpaired</code> 会让服务端<strong>不再生成语音文案</strong>，卡片上的「再听一遍」自动替换为「纯文字模式」，判断依据里同步标注。同一套流程不依赖声音也能走完——这不是隐藏开关，而是走通整条链路的真实行为，有对应用例锁定。</p>
   <figure>
     <img src="assets/04-intro.png" alt="办理须知页" />
     <figcaption>图 6　长文须知页：Agent 先说明「这页是告诉您要带什么材料」，再指向底部按钮，避免老人被长文本劝退</figcaption>

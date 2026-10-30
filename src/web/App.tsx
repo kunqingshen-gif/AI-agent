@@ -117,7 +117,8 @@ export function App() {
       try {
         let sid = session?.sessionId;
         if (!sid) {
-          const created = await api.createSession();
+          /* 关掉语音开关即视为听障/静音场景，服务端据此不再生成语音文案 */
+          const created = await api.createSession({ hearingImpaired: !speakOn });
           setSession(created);
           sid = created.sessionId;
         }
@@ -137,7 +138,7 @@ export function App() {
         setBusy(false);
       }
     },
-    [session, guideWith],
+    [session, guideWith, speakOn],
   );
 
   const advance = useCallback(

@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
+import helmet from '@fastify/helmet';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
@@ -221,7 +222,29 @@ export async function buildApp(deps: AppDeps) {
 
   const webRoot = path.resolve(process.cwd(), 'dist/web');
   if (existsSync(webRoot)) {
-    await app.register(fastifyStatic, { root: webRoot, prefix: '/' });
+    /*
+     * 安全响应头。CSP 关闭：页面用 React 行内 style 与 Web Speech API，
+     * 开 CSP 需要放宽 'unsafe-inline' 才有意义，得不偿失；其余头（nosniff、
+     * frame 防护、referrer）保留下发。
+     */
+    await app.register(helmet, { contentSecurityPolicy: false });
+
+    await app.register(fastifyStatic, {
+      root: webRoot,
+      prefix: '/',
+      cacheControl: false,
+      /*
+       * Vite 产物文件名带内容 hash，可以放心长缓存；index.html 必须每次校验，
+       * 否则用户会一直拿到旧的资源引用。
+       */
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('index.html')) {
+          res.setHeader('cache-control', 'no-cache');
+        } else {
+          res.setHeader('cache-control', 'public, max-age=31536000, immutable');
+        }
+      },
+    });
     app.setNotFoundHandler((request, reply) => {
       if (request.url.startsWith('/api')) {
         return reply.status(404).send({ error: 'NOT_FOUND', message: '接口不存在' });

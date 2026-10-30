@@ -34,7 +34,12 @@ function Target({ active, children }: { active: boolean; children: ReactNode }) 
   return (
     <div className={active ? 'target-wrap active' : 'target-wrap'}>
       {children}
-      {active && <span className="tap-hint">点这里</span>}
+      {/* 视觉提示，读屏用户由引导卡片里的 instruction 承担语义，避免重复朗读 */}
+      {active && (
+        <span className="tap-hint" aria-hidden="true">
+          点这里
+        </span>
+      )}
     </div>
   );
 }
@@ -47,8 +52,8 @@ export function ScreenView({ screen, highlightId, values, errors, onControl, onF
       const color = TILE_COLORS[(item.label.charCodeAt(0) + item.label.length) % TILE_COLORS.length] ?? '#2f6fd0';
       return (
         <Target key={item.id} active={isTarget(item.id)}>
-          <button className="tile" onClick={() => onControl(item.id)} type="button">
-            <span className="tile-icon" style={{ background: color }}>
+          <button className="tile" onClick={() => onControl(item.id)} type="button" aria-label={item.label}>
+            <span className="tile-icon" style={{ background: color }} aria-hidden="true">
               {item.label.slice(0, 2)}
             </span>
             <span className="tile-label">{item.label}</span>
@@ -94,7 +99,12 @@ export function ScreenView({ screen, highlightId, values, errors, onControl, onF
     // listItem
     return (
       <Target key={item.id} active={isTarget(item.id)}>
-        <button className="list-row" onClick={() => onControl(item.id)} type="button">
+        <button
+          className="list-row"
+          onClick={() => onControl(item.id)}
+          type="button"
+          aria-label={item.hint ? `${item.label}，${item.hint}` : item.label}
+        >
           <span className="list-main">
             <span className="list-label">{item.label}</span>
             {item.hint && <span className="list-hint">{item.hint}</span>}
@@ -151,7 +161,12 @@ export function ScreenView({ screen, highlightId, values, errors, onControl, onF
                     {field.label}
                     {field.required && <em>*</em>}
                   </span>
-                  <button className="field-input" onClick={() => onField(field.id)} type="button">
+                  <button
+                    className="field-input"
+                    onClick={() => onField(field.id)}
+                    type="button"
+                    aria-label={`${field.label}${field.required ? '，必填' : ''}，当前${values[field.id] ? `已填 ${values[field.id]}` : '未填写'}`}
+                  >
                     {values[field.id] ? (
                       <span className="field-value">{values[field.id]}</span>
                     ) : (
@@ -197,17 +212,21 @@ export function ScreenView({ screen, highlightId, values, errors, onControl, onF
   };
 
   return (
-    <div className="screen">
+    <div className="screen" role="region" aria-label={`应用界面：${screen.title}`}>
       <div className="app-bar">
         {onBack ? (
-          <button className="app-back" onClick={onBack} type="button" aria-label="返回">
+          <button className="app-back" onClick={onBack} type="button" aria-label="返回上一页">
             ‹
           </button>
         ) : (
-          <span className="app-back app-back-idle">‹</span>
+          <span className="app-back app-back-idle" aria-hidden="true">
+            ‹
+          </span>
         )}
         <span className="app-title">{screen.title}</span>
-        <span className="app-more">⋯</span>
+        <span className="app-more" aria-hidden="true">
+          ⋯
+        </span>
       </div>
       <div className="app-body">{screen.blocks.map(renderBlock)}</div>
       {screen.tabs && (

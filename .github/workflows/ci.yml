@@ -37,6 +37,10 @@ jobs:
       - name: 单元与接口测试
         run: npm run test
 
+      - name: 覆盖率（仅 Node 22 采样一次）
+        if: matrix.node == 22
+        run: npm run test:coverage
+
       - name: 生产构建
         run: npm run build
 
