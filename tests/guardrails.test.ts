@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   containsHighRiskTerm,
   isMandatoryHumanAction,
+  looksTruncated,
   normalizeSpeak,
   sanitizeAssistantText,
 } from '@core/domain/guardrails';
@@ -36,6 +37,30 @@ describe('安全护栏', () => {
   it('合规话术原样保留', () => {
     const text = '点最下面蓝色的「开始办理」';
     expect(sanitizeAssistantText(text, 'fallback')).toMatchObject({ text, rejected: false });
+  });
+
+  it('半句话退回规则原文：引号里的控件名丢了，就是让人点一个空格子', () => {
+    /* 实测中原句是「…您自己点左边的「确认是本人操作」」，模型改写时把控件名丢了 */
+    const broken = '弹出来的是安全提示，问我是不是您本人。是您本人，您自己点左边的「」';
+    const fallback = '弹出来的是安全提示。是您本人，您自己点左边的「确认是本人操作」。';
+    expect(looksTruncated(broken)).toBe(true);
+    const result = sanitizeAssistantText(broken, fallback);
+    expect(result.rejected).toBe(true);
+    expect(result.reason).toBe('truncated');
+    expect(result.text).toBe(fallback);
+  });
+
+  it('结尾停在逗号、冒号或开括号上，也算没说完', () => {
+    expect(looksTruncated('您先点开民政服务，')).toBe(true);
+    expect(looksTruncated('下面三件事：')).toBe(true);
+    expect(looksTruncated('您看左边那个（')).toBe(true);
+    expect(looksTruncated('点「开始办理」。')).toBe(false);
+  });
+
+  it('成对的书名号与括号不算残缺', () => {
+    const ok = '点写着「民政服务」的那个方块（第 4 个）';
+    expect(looksTruncated(ok)).toBe(false);
+    expect(sanitizeAssistantText(ok, 'fallback')).toMatchObject({ text: ok, rejected: false });
   });
 
   it('资金、身份、生物特征等动作一律要求本人确认', () => {

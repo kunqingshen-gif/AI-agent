@@ -152,6 +152,24 @@ async function main() {
         await waitStable();
         await sleep(times > 1 ? 400 : 700);
       }
+      /*
+       * 人脸核验是弹窗内的流程，不是换屏：
+       * 点「开始核验」后要等模拟扫描跑完（约 3.3 秒）再点「继续办理」，
+       * 否则后面的「确认是本人操作」根本不存在——脚本会静默截一张错的图。
+       */
+      if (await evaluate(`Boolean(document.querySelector('.face-modal'))`)) {
+        console.log('    人脸核验弹窗：等待扫描完成');
+        const ready = await waitFor(
+          `Boolean([...document.querySelectorAll('.face-modal button')].find((b) => b.textContent && b.textContent.includes('继续办理')))`,
+          15000,
+          '核验通过',
+        );
+        if (ready) {
+          await clickText('继续办理');
+          await waitStable();
+          await sleep(700);
+        }
+      }
     }
     if (step.silent) {
       console.log(`  ${step.note}`);
