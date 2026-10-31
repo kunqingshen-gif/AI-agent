@@ -154,6 +154,8 @@ export async function buildApp(deps: AppDeps) {
     },
     guardrailMode: config.guardrailMode,
     screens: SCREEN_IDS.length,
+    /* 当前生效的提示词版本：改了配置却看不出改没改，是最容易踩的坑 */
+    promptVersion: service.promptVersion(),
   }));
 
   app.get('/api/tasks', async () => service.listTasks());

@@ -314,3 +314,37 @@ export function buildSlotUserPrompt(utterance: string, slotHint: SlotName | unde
 export function isKnownTask(id: string): id is TaskId {
   return (TASK_IDS as readonly string[]).includes(id);
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   提示词包：可被外部配置文件覆盖
+   ───────────────────────────────────────────────────────────────────
+   上面五个常量是**出厂默认值**，不是唯一来源。
+   启动时会尝试读 `config/prompts.json`，读到就用文件里的，读不到就用这里。
+
+   为什么要有这一层：
+   自评表里「可配置而非硬编码」只有 1.5 分——提示词全写在 TS 里，
+   业务人员改一个标点都要发版。这不是能力问题，是没做这层胶水。
+
+   为什么 version 是必填：
+   改完之后要能回答「这句话是哪一版提示词说出来的」。没有版本号，
+   反馈闭环收集到的「它说错了」就无法归因到具体某一次改动。
+   ═══════════════════════════════════════════════════════════════════ */
+
+export interface PromptSet {
+  /** 版本标识，进埋点；改内容必须改版本，否则「说错了」归不到因 */
+  version: string;
+  guide: string;
+  intent: string;
+  slot: string;
+  question: string;
+  plan: string;
+}
+
+export const DEFAULT_PROMPTS: PromptSet = {
+  version: 'builtin-1',
+  guide: GUIDE_SYSTEM_PROMPT,
+  intent: INTENT_SYSTEM_PROMPT,
+  slot: SLOT_SYSTEM_PROMPT,
+  question: QUESTION_SYSTEM_PROMPT,
+  plan: PLAN_SYSTEM_PROMPT,
+};

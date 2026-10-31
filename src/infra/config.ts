@@ -17,6 +17,8 @@ const EnvSchema = z.object({
 
   GUARDRAIL_MODE: z.enum(['strict', 'assistive']).default('strict'),
   DATA_DIR: z.string().default('./.data'),
+  /** 提示词配置文件；不存在则用内置默认值，格式错则启动失败 */
+  PROMPTS_FILE: z.string().default('./config/prompts.json'),
 });
 
 export type AppConfig = {
@@ -33,6 +35,8 @@ export type AppConfig = {
   };
   guardrailMode: 'strict' | 'assistive';
   dataDir: string;
+  /** 提示词配置文件路径（不存在则用内置默认值） */
+  promptsFile: string;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -56,6 +60,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     },
     guardrailMode: e.GUARDRAIL_MODE,
     dataDir: e.DATA_DIR,
+    promptsFile: e.PROMPTS_FILE,
   };
 }
 

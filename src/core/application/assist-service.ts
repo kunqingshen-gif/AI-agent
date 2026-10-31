@@ -30,16 +30,13 @@ import { closeCollab, collabTelemetry, joinCollab, openCollab, pushHint, isColla
 import { routeTool, type ToolPayload } from '../domain/tools';
 import { MATERIAL_LIBRARY } from '@shared/household';
 import {
-  GUIDE_SYSTEM_PROMPT,
+  DEFAULT_PROMPTS,
   GuideOutputSchema,
-  INTENT_SYSTEM_PROMPT,
   IntentOutputSchema,
-  PLAN_SYSTEM_PROMPT,
   PlanOutputSchema,
-  QUESTION_SYSTEM_PROMPT,
   QuestionOutputSchema,
-  SLOT_SYSTEM_PROMPT,
   SlotOutputSchema,
+  type PromptSet,
   buildGuideUserPrompt,
   buildPlanUserPrompt,
   buildQuestionUserPrompt,
@@ -127,6 +124,13 @@ export interface ServiceOptions {
   maxSessions?: number;
   /** 模型改写缓存上限（默认 500，覆盖 17 屏 × 节点 × 三档数字素养的常见组合） */
   maxRewriteCache?: number;
+  /**
+   * 提示词包。不传就用内置默认值。
+   *
+   * 注入而不是直接 import：这样「换成业务人员改过的那一版提示词」
+   * 只是一次传参，不需要改代码、也不需要重建服务。
+   */
+  prompts?: PromptSet;
 }
 
 const DEFAULT_MAX_SESSIONS = 2000;
@@ -154,13 +158,23 @@ export class AssistService {
    */
   private readonly feedbackTally: Record<FeedbackVerdict, number> = { worked: 0, failed: 0, wrong: 0 };
 
+  /** 当前生效的提示词包；`version` 会进埋点，便于把「说错了」归因到某一版 */
+  private readonly prompts: PromptSet;
+
   constructor(
     private readonly llm: LlmPort,
     private readonly telemetry: TelemetryPort,
     private readonly clock: ClockPort,
     private readonly logger: Logger,
     private readonly options: ServiceOptions = {},
-  ) {}
+  ) {
+    this.prompts = options.prompts ?? DEFAULT_PROMPTS;
+  }
+
+  /** 当前提示词版本，供 `/api/meta` 与埋点使用 */
+  promptVersion(): string {
+    return this.prompts.version;
+  }
 
   private rememberSession(session: SessionState): void {
     const max = this.options.maxSessions ?? DEFAULT_MAX_SESSIONS;
@@ -451,7 +465,7 @@ export class AssistService {
       try {
         const raw = await this.llm.complete(
           {
-            system: INTENT_SYSTEM_PROMPT,
+            system: this.prompts.intent,
             user: [
               `【事项清单】`,
               ...TASK_LIST.map((t) => `- ${t.taskId}｜${t.title}｜触发词：${t.hotkey}`),
@@ -597,7 +611,7 @@ export class AssistService {
       try {
         const raw = await this.llm.complete(
           {
-            system: QUESTION_SYSTEM_PROMPT,
+            system: this.prompts.question,
             user: buildQuestionUserPrompt(
               utterance,
               hits.map((hit) => ({ question: hit.question, answer: hit.answer, points: hit.points })),
@@ -689,7 +703,7 @@ export class AssistService {
       const hints = topSuggestions(utterance).map((id) => TASK_FLOWS[id].title);
       const raw = await this.llm.complete(
         {
-          system: PLAN_SYSTEM_PROMPT,
+          system: this.prompts.plan,
           user: buildPlanUserPrompt(utterance, hints),
           temperature: 0.2,
           maxTokens: 700,
@@ -888,7 +902,7 @@ export class AssistService {
         try {
           const raw = await this.llm.complete(
             {
-              system: GUIDE_SYSTEM_PROMPT,
+              system: this.prompts.guide,
               user: buildGuideUserPrompt({
                 flow,
                 screen,
@@ -1001,6 +1015,8 @@ export class AssistService {
         source,
         latencyMs: action.latencyMs,
         screenId: req.screenId,
+        /* 把提示词版本钉在每一条引导上：以后收到「它说错了」，能查到是哪一版说的 */
+        promptVersion: this.prompts.version,
       },
     });
 
@@ -1026,7 +1042,7 @@ export class AssistService {
     try {
       const raw = await this.llm.complete(
         {
-          system: SLOT_SYSTEM_PROMPT,
+          system: this.prompts.slot,
           user: buildSlotUserPrompt(utterance, slotHint, label),
           temperature: 0.1,
           maxTokens: 240,

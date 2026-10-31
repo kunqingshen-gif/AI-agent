@@ -27,7 +27,8 @@
     "smoke": "tsx scripts/smoke.ts",
     "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
     "pdf": "node scripts/build-manual-pdf.mjs",
-    "demo:check": "node scripts/demo-check.mjs"
+    "demo:check": "node scripts/demo-check.mjs",
+    "config:export": "tsx scripts/export-prompts.ts"
   },
   "dependencies": {
     "@fastify/helmet": "^13.2.0",

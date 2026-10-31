@@ -3,6 +3,7 @@ import { loadConfig } from '@infra/config';
 import { createLogger } from '@infra/logger';
 import { DashScopeLlm, DisabledLlm } from '@infra/llm/dashscope';
 import { JsonlTelemetry } from '@infra/telemetry/jsonl';
+import { loadPromptSet } from '@infra/prompt-store';
 import { AssistService } from '@core/application/assist-service';
 import { buildApp } from './app';
 
@@ -20,7 +21,22 @@ async function main(): Promise<void> {
     logger.warn('未配置 LLM_API_KEY，已启用纯规则引擎降级模式（演示仍可完整跑通）');
   }
 
-  const service = new AssistService(llm, telemetry, { now: () => Date.now() }, logger);
+  /*
+   * 提示词从外部配置加载。
+   *
+   * 读到就用文件里的，读不到就用内置默认值；**格式错则直接启动失败**——
+   * 业务人员改漏一个括号，必须当场知道，而不是悄悄用回旧提示词再困惑「怎么没效果」。
+   */
+  const loaded = loadPromptSet(config.promptsFile, logger);
+  if (loaded.source === 'builtin') {
+    logger.info({ path: config.promptsFile }, '未找到提示词配置，使用内置默认值');
+  } else {
+    logger.info({ version: loaded.prompts.version }, '提示词已生效');
+  }
+
+  const service = new AssistService(llm, telemetry, { now: () => Date.now() }, logger, {
+    prompts: loaded.prompts,
+  });
   const app = await buildApp({ config, logger, service, telemetry });
 
   const shutdown = async (signal: string) => {
