@@ -49,6 +49,18 @@ const ExtractSchema = z.object({
 
 const RescueSchema = z.object({ sessionId: z.string().min(8).max(64) });
 
+/**
+ * 结果反馈。
+ *
+ * verdict 三档必填，不接受自由文本当结论——老人不会填量表，
+ * 只会回答「办成没有」；note 可选，是给愿意多说一句的人留的口子。
+ */
+const FeedbackSchema = z.object({
+  sessionId: z.string().min(8).max(64),
+  verdict: z.enum(['worked', 'failed', 'wrong']),
+  note: z.string().trim().max(200).optional(),
+});
+
 const PreflightSchema = z.object({
   taskId: z.enum(TASK_IDS).optional(),
   sessionId: z.string().min(8).max(64).optional(),
@@ -234,6 +246,26 @@ export async function buildApp(deps: AppDeps) {
   });
 
   /*
+   * 结果反馈：办成了 / 没办成 / 它说错了。
+   *
+   * 这是产品唯一的「外部信号」入口。没有它，提示词和事项库只能靠开发者猜；
+   * 有它，「它说错了」的占比才第一次成为可观测指标，能进 /api/metrics，
+   * 也能直接对着某一句话去改。
+   *
+   * 允许重复提交：老人改主意、或者第一次点错，都该能改。后到的覆盖前一次，
+   * 但每一笔都留痕（埋点不去重），这样才看得出「改主意」本身有多常见。
+   */
+  app.post('/api/feedback', async (request, reply) => {
+    const parsed = FeedbackSchema.safeParse(request.body ?? {});
+    if (!parsed.success) return badRequest(reply, parsed.error.flatten());
+    try {
+      return service.recordFeedback(parsed.data.sessionId, parsed.data.verdict, parsed.data.note);
+    } catch {
+      return reply.status(404).send({ error: 'SESSION_NOT_FOUND', message: '会话已过期，请重新开始' });
+    }
+  });
+
+  /*
    * 管家能力的独立入口。
    *
    * 这些接口是给「面板」用的：用户可能在面板里直接点事项看体检，
@@ -290,7 +322,12 @@ export async function buildApp(deps: AppDeps) {
     return result.value;
   });
 
-  app.get('/api/metrics', async () => ({ events: await telemetry.summary(), at: Date.now() }));
+  app.get('/api/metrics', async () => ({
+    events: await telemetry.summary(),
+    /* 质量指标：反馈分档与「它说错了」占比——答辩时这一个数最说明问题 */
+    quality: service.quality(),
+    at: Date.now(),
+  }));
 
   const webRoot = path.resolve(process.cwd(), 'dist/web');
   if (existsSync(webRoot)) {

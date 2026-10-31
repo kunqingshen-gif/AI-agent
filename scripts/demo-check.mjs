@@ -328,6 +328,7 @@ async function main() {
     runProbe('探针 · 零学习成本', 'node scripts/probe-zero.mjs', { timeout: 420_000 });
     runProbe('探针 · 管家能力', 'node scripts/probe-guardian.mjs', { timeout: 300_000 });
     run('截图 · Agent 视线', 'node scripts/shot-sight.mjs', { allowFail: true });
+    runProbe('探针 · 结果反馈闭环', 'node scripts/shot-feedback.mjs', { timeout: 240_000 });
   } else {
     for (const label of ['探针 · 全屏可达性', '探针 · 零学习成本', '探针 · 管家能力']) {
       steps.push({

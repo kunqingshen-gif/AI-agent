@@ -25,6 +25,8 @@ interface Props {
   targetId?: string;
   /** 这一屏能被读到的控件数——AI 读屏读到的就是这些 */
   controlCount: number;
+  /** 流程已结束（结果页）：不再说「等您说一句话」，那句话说完了 */
+  silent?: boolean;
 }
 
 interface Box {
@@ -35,7 +37,7 @@ interface Box {
   sw: number;
 }
 
-export function SightLine({ targetId, controlCount }: Props) {
+export function SightLine({ targetId, controlCount, silent = false }: Props) {
   const [box, setBox] = useState<Box | null>(null);
   const [tick, setTick] = useState(0);
 
@@ -104,7 +106,7 @@ export function SightLine({ targetId, controlCount }: Props) {
    * 不是「先问一句、再去现找」。
    */
   if (!targetId || !box) {
-    if (targetId) return null;
+    if (targetId || silent) return null;
     return (
       <div className="sight-track" aria-hidden="true">
         <span className="sight-dot" />

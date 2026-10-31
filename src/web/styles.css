@@ -3049,3 +3049,90 @@ input {
   border-top: 1px dashed currentColor;
   opacity: 0.5;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   办完之后问一句「办成了吗」
+   ───────────────────────────────────────────────────────────────────
+   老人不填量表。问「您满意吗」得到沉默或「还行」——前者没信息，
+   后者无法归因。问「这事儿办成了没有」，他能立刻答，因为那是事实。
+   ═══════════════════════════════════════════════════════════════════ */
+
+.fb {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+  text-align: left;
+}
+
+.fb-q {
+  margin: 0 0 9px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.fb-btns {
+  display: flex;
+  gap: 7px;
+}
+
+.fb-btn {
+  flex: 1;
+  min-height: 42px;
+  padding: 8px 4px;
+  border: 1px solid #cfd9e5;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink-2);
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.fb-btn:hover {
+  background: #f4f8fd;
+  border-color: #b3c9e2;
+}
+
+.fb-btn-ok {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: #fff;
+}
+
+.fb-btn-ok:hover {
+  background: #1560c4;
+  border-color: #1560c4;
+}
+
+/* 「它说错了」不用红色：红色在我们的语义里是「危险，别点」，
+   而这条反馈恰恰是应该鼓励点的 */
+.fb-btn-wrong {
+  color: var(--ink-3);
+  border-style: dashed;
+}
+
+.fb-done {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+  font-size: 13.5px;
+  color: var(--success);
+  text-align: left;
+}
+
+.fb-done-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--success-soft);
+  color: var(--success);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}

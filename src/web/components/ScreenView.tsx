@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from 'react';
-import type { Control, ScreenBlock, ScreenModel } from '@shared/types';
+import type { Control, FeedbackVerdict, ScreenBlock, ScreenModel } from '@shared/types';
 import { SightLine } from './SightLine';
+import { FeedbackBar } from './FeedbackBar';
 
 interface Props {
   screen: ScreenModel;
@@ -14,6 +15,13 @@ interface Props {
   activeTabId?: string;
   /** 字号档位：老人把「字体调大」拨到开，界面文字真的会变大 */
   size?: 'normal' | 'large';
+  /**
+   * 结果反馈回调。
+   *
+   * 只在结果屏出现。不传就不渲染——其他屏幕不需要问「办成了吗」，
+   * 问了反而像在催老人交作业。
+   */
+  onFeedback?: (verdict: FeedbackVerdict) => void;
 }
 
 const TILE_COLORS = ['#2f6fd0', '#2c8f7a', '#b46a2c', '#8a5cb8', '#c04b52', '#1f7fae', '#5a7d2a', '#a2562f'];
@@ -84,7 +92,18 @@ function Target({ cid, active, children }: { cid: string; active: boolean; child
   );
 }
 
-export function ScreenView({ screen, highlightId, values, errors, onControl, onField, onBack, activeTabId, size = 'normal' }: Props) {
+export function ScreenView({
+  screen,
+  highlightId,
+  values,
+  errors,
+  onControl,
+  onField,
+  onBack,
+  activeTabId,
+  size = 'normal',
+  onFeedback,
+}: Props) {
   const isTarget = (id: string) => highlightId === id;
 
   /**
@@ -291,6 +310,8 @@ export function ScreenView({ screen, highlightId, values, errors, onControl, onF
                 <li key={i}>{line}</li>
               ))}
             </ul>
+            {/* 办完才问「办成了吗」——这是一单里唯一值得回头问的一句话 */}
+            {onFeedback && <FeedbackBar onSend={onFeedback} />}
           </div>
         );
       default:
@@ -317,7 +338,11 @@ export function ScreenView({ screen, highlightId, values, errors, onControl, onF
       </div>
       <div className="app-body">{screen.blocks.map(renderBlock)}</div>
       {/* Agent 的视线：看见哪、指着哪，画在屏幕上而不是写在文档里 */}
-      <SightLine targetId={highlightId} controlCount={controlCount} />
+      <SightLine
+        targetId={highlightId}
+        controlCount={controlCount}
+        silent={screen.blocks.some((block) => block.type === 'result')}
+      />
       {/*
         * 「下一步」条——整套适老设计里最关键的一处。
         *

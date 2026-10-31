@@ -60,7 +60,13 @@ export interface TelemetryEvent {
     /** 一句话被路由到管家的某种能力（体检 / 日历 / 反诈 / 协办） */
     | 'tool.routed'
     /** 协办码状态变化：生成、接入、留言、关闭 */
-    | 'collab.updated';
+    | 'collab.updated'
+    /**
+     * 用户对办件结果给出反馈（办成了 / 没办成 / 它说错了）。
+     *
+     * 这条事件是「运营迭代」的唯一入口：没有它，提示词和知识库只能靠拍脑袋改。
+     */
+    | 'feedback.given';
   sessionId: string;
   at: number;
   payload: Record<string, unknown>;

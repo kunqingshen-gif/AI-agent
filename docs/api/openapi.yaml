@@ -723,3 +723,33 @@ components:
         traps:
           type: array
           items: { type: string }
+
+  /api/feedback:
+    post:
+      tags: [quality]
+      summary: 记录办件结果反馈
+      description: |
+        结果页问一句「这件事办成了吗」。三档不对等：
+        - worked：办成了，用于算真实一次办成率；
+        - failed：没办成，但指引没说错（外部原因）；
+        - wrong：**它说错了**，唯一能反哺提示词与知识库的信号。
+        允许重复提交（改主意），后到覆盖前一次结论，但埋点不去重。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, verdict]
+              properties:
+                sessionId: { type: string, minLength: 8, maxLength: 64 }
+                verdict: { type: string, enum: [worked, failed, wrong] }
+                note: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: 返回更新后的会话指标
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionMetrics' }
+        '404':
+          description: 会话不存在或已过期

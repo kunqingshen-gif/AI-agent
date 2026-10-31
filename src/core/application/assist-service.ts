@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type {
   AnswerPayload,
   AssistRequest,
+  FeedbackVerdict,
   FlowId,
   GuideAction,
   Intent,
@@ -76,6 +77,8 @@ export interface SessionState {
   guardrailsTriggered: number;
   handoffs: number;
   finished: boolean;
+  /** 用户对这一单的最终反馈；只记一次，后到的覆盖前一次（用户改主意是允许的） */
+  feedback?: FeedbackVerdict;
 }
 
 export interface InterpretResult {
@@ -141,6 +144,15 @@ export class AssistService {
   private readonly rewriteCache = new Map<string, RewriteEntry>();
   /** 协办码 → 票据。上限 50，过期的先清掉，避免长期运行后无限增长 */
   private readonly collabs = new Map<string, CollabTicket>();
+
+  /**
+   * 反馈分档计数（进程内）。
+   *
+   * 为什么不从埋点 JSONL 重算：埋点按 type 计数，不区分 verdict。
+   * 这里单独记一份，代价是一个对象，换来 `/api/metrics` 能直接回答
+   * 「有多少人说它错了」——这是目前唯一能进答辩材料的质量指标。
+   */
+  private readonly feedbackTally: Record<FeedbackVerdict, number> = { worked: 0, failed: 0, wrong: 0 };
 
   constructor(
     private readonly llm: LlmPort,
@@ -1077,7 +1089,55 @@ export class AssistService {
       completed: session.finished,
       baselineSteps: flow?.baselineSteps ?? 0,
       baselineMs: flow?.baselineMs ?? 0,
+      feedback: session.feedback,
     };
+  }
+
+  /**
+   * 记录用户对办件结果的反馈。
+   *
+   * 为什么这件事重要到要单独一个接口：
+   * 在此之前，产品对「自己办得对不对」是**完全没有信号**的——
+   * 提示词、知识库、事项库只能靠开发者拍脑袋改。有了这三档反馈，
+   * 「它说错了」的占比才第一次成为一个可观测的指标，
+   * 而不是靠评委问一句「老人用得怎么样」然后我们猜。
+   *
+   * 三个字段一起记：反馈本身、当时的任务、以及走偏/拦截次数——
+   * 因为「没办成」的原因往往不在最后一步，而在前面的某次误判。
+   */
+  recordFeedback(sessionId: string, verdict: FeedbackVerdict, note?: string): SessionMetrics {
+    const session = this.requireSession(sessionId);
+    /* 改主意时先撤掉上一次的计数：分档统计只反映当前结论，不重复计人头 */
+    if (session.feedback) this.feedbackTally[session.feedback] = Math.max(0, this.feedbackTally[session.feedback] - 1);
+    this.feedbackTally[verdict] += 1;
+    session.feedback = verdict;
+    this.telemetry.record({
+      type: 'feedback.given',
+      sessionId,
+      at: this.clock.now(),
+      payload: {
+        verdict,
+        taskId: session.intent?.taskId ?? session.flow?.taskId ?? null,
+        stepsGuided: session.stepsGuided,
+        wrongTurns: session.wrongTurns,
+        guardrailsTriggered: session.guardrailsTriggered,
+        /* 备注只留前 200 字：这是埋点不是工单，不需要全文 */
+        note: note?.slice(0, 200) ?? null,
+      },
+    });
+    return this.metrics(sessionId);
+  }
+
+  /**
+   * 质量指标：有多少人办了、有多少人说它错了。
+   *
+   * `wrongRate` 是这套指标里最有用的一个数——它直接指向「该改提示词还是该改事项库」。
+   * 分母是「给过反馈的人数」，不是「全部会话」：没反馈的人不代表满意，不能算作成功。
+   */
+  quality(): { total: number; worked: number; failed: number; wrong: number; wrongRate: number } {
+    const { worked, failed, wrong } = this.feedbackTally;
+    const total = worked + failed + wrong;
+    return { total, worked, failed, wrong, wrongRate: total > 0 ? +(wrong / total).toFixed(3) : 0 };
   }
 
   /* ─────────────── 内部工具 ─────────────── */

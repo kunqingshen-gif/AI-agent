@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AnswerPayload, GuideAction, Intent, ScreenId, SessionMetrics, SlotName } from '@shared/types';
+import type { AnswerPayload, FeedbackVerdict, GuideAction, Intent, ScreenId, SessionMetrics, SlotName } from '@shared/types';
 import { SCREENS } from '@shared/screens';
 import { api, type InterpretResponse, type MetaResponse, type SessionResponse } from './client';
 import { PARENT, TAB_OF, isBrowseControl, resolveTarget } from './nav';
@@ -257,6 +257,20 @@ export function App() {
       setCollabHint({ from: last.from, text: last.text });
     },
     [],
+  );
+
+  /**
+   * 把「办成了吗」的回答送回去。
+   *
+   * 按钮自己会就地变一句话，所以这里不阻塞界面；失败才提示——
+   * 说「记下了」却没记上，比不记更糟，下次改提示词就少一条证据。
+   */
+  const sendFeedback = useCallback(
+    (verdict: FeedbackVerdict) => {
+      if (!session) return;
+      api.feedback(session.sessionId, verdict).catch(() => setToast('这条反馈没记上，稍后再点一次'));
+    },
+    [session],
   );
 
   useEffect(() => {
@@ -626,6 +640,7 @@ export function App() {
               onField={onField}
               {...(stack.length > 0 || PARENT[screenId] ? { onBack: () => void onBack() } : {})}
               activeTabId={TAB_OF[screenId] ?? (stack.length > 0 ? TAB_OF[stack[stack.length - 1] as ScreenId] : undefined)}
+              {...(session ? { onFeedback: sendFeedback } : {})}
             />
           </PhoneFrame>
 

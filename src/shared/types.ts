@@ -274,7 +274,22 @@ export interface SessionMetrics {
   completed: boolean;
   baselineSteps: number;
   baselineMs: number;
+  /** 用户对这一单的结果反馈；没反馈就是 undefined */
+  feedback?: FeedbackVerdict;
 }
+
+/**
+ * 用户对「这一单办成没有」的反馈。
+ *
+ * 三个选项刻意不对等：
+ *  - worked：办成了。用于算真实一次办成率。
+ *  - failed：没办成，但指引没说错（比如窗口关门了）。用于区分「产品问题」与「外部原因」。
+ *  - wrong：**它说错了**。这是唯一能反哺提示词和知识库的信号，权重最高。
+ *
+ * 不设「一般 / 满意」这类模糊选项：老人不会填量表，只会回答「办成没有」。
+ */
+export type FeedbackVerdict = 'worked' | 'failed' | 'wrong';
+
 
 export interface TaskSpecSummary {
   taskId: TaskId;

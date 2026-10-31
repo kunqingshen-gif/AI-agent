@@ -1,4 +1,15 @@
-import type { AnswerPayload, FlowId, GuideAction, Intent, ScreenId, SessionMetrics, SlotName, TaskId, UserProfile } from '@shared/types';
+import type {
+  AnswerPayload,
+  FeedbackVerdict,
+  FlowId,
+  GuideAction,
+  Intent,
+  ScreenId,
+  SessionMetrics,
+  SlotName,
+  TaskId,
+  UserProfile,
+} from '@shared/types';
 import type { ToolPayload } from '@core/domain/tools';
 import type { PreflightResult } from '@core/domain/preflight';
 import type { LifeScan } from '@core/domain/lifecycle';
@@ -76,6 +87,9 @@ export const api = {
   rescue: (sessionId: string) =>
     request<{ script: string; hotline: string }>('/api/rescue', { method: 'POST', body: JSON.stringify({ sessionId }) }),
   metrics: (sessionId: string) => request<SessionMetrics>(`/api/session/${sessionId}/metrics`),
+  /** 结果反馈：办成了 / 没办成 / 它说错了（唯一能反哺提示词的信号） */
+  feedback: (sessionId: string, verdict: FeedbackVerdict, note?: string) =>
+    request<SessionMetrics>('/api/feedback', { method: 'POST', body: JSON.stringify({ sessionId, verdict, note }) }),
 
   /* 管家能力：与自然语言那条路共用同一批服务方法，结论不会有两套 */
   preflight: (taskId?: TaskId) =>
