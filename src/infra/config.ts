@@ -6,7 +6,12 @@ import { z } from 'zod';
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(8787),
-  HOST: z.string().default('127.0.0.1'),
+  /*
+   * 默认 0.0.0.0 而不是 127.0.0.1：容器/云环境里只听本机等于外部访问不到。
+   * 本机开发在 .env 里显式写 HOST=127.0.0.1 把口子收回去——
+   * 默认值服务于「能不能跑起来」，安全边界交给部署配置，不该反过来。
+   */
+  HOST: z.string().default('0.0.0.0'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
   LLM_BASE_URL: z.string().url().default('https://dashscope.aliyuncs.com/compatible-mode/v1'),

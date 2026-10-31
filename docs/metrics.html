@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>随行帮办 · 指标说明（一页）</title>
+<style>
+  @page { size: A4; margin: 12mm 13mm 10mm; }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    margin: 0; color: #16202e;
+    font-family: "PingFang SC", "Microsoft YaHei", "Source Han Sans SC", system-ui, sans-serif;
+    font-size: 8.9pt; line-height: 1.48;
+  }
+  h1 { font-size: 17pt; margin: 0 0 2px; color: #0f1a29; letter-spacing: .01em; }
+  .sub { color: #5b6c82; font-size: 9pt; margin: 0 0 10px; }
+  .rule { height: 2px; background: #1a6bd6; margin: 0 0 10px; }
+  h2 { font-size: 10pt; margin: 9px 0 4px; color: #0f1a29; }
+  p { margin: 0 0 6px; text-align: justify; }
+  table { width: 100%; border-collapse: collapse; margin: 4px 0 6px; font-size: 8.1pt; }
+  th, td { border: 1px solid #d8e0ea; padding: 3px 5px; vertical-align: top; text-align: left; }
+  th { background: #eef4fd; color: #12365f; font-weight: 600; }
+  code { background: #f2f5f9; padding: 0 3px; border-radius: 3px; font-size: 8.6pt; }
+  .kpi { display: flex; gap: 6px; margin: 6px 0 8px; }
+  .kpi div {
+    flex: 1; border: 1px solid #d8e0ea; border-radius: 6px; padding: 5px 7px; background: #fafcff;
+  }
+  .kpi b { display: block; font-size: 12pt; color: #1a6bd6; line-height: 1.3; }
+  .kpi span { font-size: 8.2pt; color: #5b6c82; }
+  .note { color: #5b6c82; font-size: 8.4pt; }
+  .foot { margin-top: 10px; padding-top: 6px; border-top: 1px dashed #d8e0ea; color: #6a7a90; font-size: 8.2pt; }
+</style>
+</head>
+<body>
+  <h1>随行帮办 · 指标说明</h1>
+  <p class="sub">2026 iCAN 大学生创新创业大赛 · 快手 AI 未来创造者挑战赛（10 月月赛 · AI 产品实现方向）　｜　辅助材料：指标采集方式与实测值</p>
+  <div class="rule"></div>
+
+  <p>本页回答一个问题：<strong>说明书里那些数字是怎么来的</strong>。全部指标取自运行中的真实埋点，不靠估算；任何人都能按下表右侧的命令自行复现。</p>
+
+  <div class="kpi">
+    <div><b>2.0s / 2.8s</b><span>模型通道延迟 P50 / P95（端到端含 HTTP）</span></div>
+    <div><b>621</b><span>单次调用平均 token</span></div>
+    <div><b>220</b><span>自动化用例，全部通过</span></div>
+    <div><b>12 / 12</b><span>低保复核流程引导步数命中</span></div>
+  </div>
+
+  <h2>一、指标定义与采集方式</h2>
+  <table>
+    <tr>
+      <th style="width:15%">指标</th><th style="width:27%">定义（怎么算）</th><th style="width:26%">采集位置</th><th>当前值 / 判读</th>
+    </tr>
+    <tr>
+      <td>引导准确率</td>
+      <td>Agent 指向的控件 ID 与流程图声明的目标控件一致的比例</td>
+      <td>契约测试（<code>tests/navigation.test.ts</code>）+ 埋点 <code>guide.issued</code> 的 <code>targetControlId</code></td>
+      <td>100%（12/12 节点）。这是硬约束：流程图里写哪个控件，界面就只高亮哪个，模型无权改动</td>
+    </tr>
+    <tr>
+      <td>响应延迟</td>
+      <td>引导接口从收到请求到返回的时间，含模型调用与 HTTP 往返</td>
+      <td>埋点 <code>guide.issued.latencyMs</code>；<code>/api/metrics</code> 输出 p50 / p95</td>
+      <td>模型通道 P50 2037ms / P95 2804ms；规则通道 P50 2.3ms；改写缓存命中 0ms（不发起调用）</td>
+    </tr>
+    <tr>
+      <td>调用成本</td>
+      <td>累计 token ÷ 模型调用次数</td>
+      <td><code>/api/metrics</code> → <code>llm.tokens</code> / <code>llm.calls</code></td>
+      <td>23 次调用共 14281 tokens，均值 621 tokens/次。规则通道与缓存命中为 0 调用</td>
+    </tr>
+    <tr>
+      <td>纠偏成功率</td>
+      <td>走错后 1 步内回到正确流程的比例</td>
+      <td>埋点 <code>rescue.triggered</code>，含误入屏幕与纠偏话术</td>
+      <td>100%（演示用例）。纠偏不是「返回」两个字，而是说明「这里是医保，办低保要回上一页」</td>
+    </tr>
+    <tr>
+      <td>护栏命中</td>
+      <td>支付、人脸、验证码、授权协议等节点被降级为「本人确认」的次数</td>
+      <td>埋点 <code>guardrail.blocked</code>；规则在 <code>guardrails.ts</code> 硬编码</td>
+      <td>低保复核 2 次（人脸 / 身份）、生活缴费 2 次（支付 / 确认）。命中后模型无法代按</td>
+    </tr>
+    <tr>
+      <td>说错率</td>
+      <td>结果页反馈「它说错了」占全部反馈的比例，按人头计数，改主意以最后一次为准</td>
+      <td>埋点 <code>feedback.given</code>；<code>/api/metrics</code> → <code>quality.wrongRate</code></td>
+      <td>三档分开统计。「没办成」多卡在系统或材料，是流程问题；「说错了」才是措辞或定位问题，两者混算会把可修的平均掉</td>
+    </tr>
+    <tr>
+      <td>通道可用性</td>
+      <td>模型不可用时流程能否走完</td>
+      <td>熔断器 + <code>/api/meta</code>；无密钥冒烟测试</td>
+      <td>可完整走完。连续失败即熔断 60 秒，界面徽标变为「模型降级 · 规则兜底」并如实告知</td>
+    </tr>
+  </table>
+
+  <h2>二、怎么复现这些数字</h2>
+  <table>
+    <tr><th style="width:34%">命令</th><th>产出</th></tr>
+    <tr><td><code>npm install &amp;&amp; npm run verify</code></td><td>类型检查 + 代码风格 + 220 项用例 + 构建。任何一项失败即中断</td></tr>
+    <tr><td><code>npm run demo:check</code></td><td>一条命令跑完：环境自检 → 静态检查 → 单测 → 构建 → 起服务 → 冒烟 → 五项真实浏览器探针 → 截图 → 生成自包含 HTML 报告。<strong>探针出现 ✗ 或非零退出码，整条命令失败</strong></td></tr>
+    <tr><td><code>curl /api/metrics</code></td><td>上述延迟、token、反馈与埋点计数的实时快照</td></tr>
+  </table>
+
+  <h2>三、口径说明（避免误读）</h2>
+  <p>① <strong>用 P95 而非平均值</strong>：引导是有人盯着屏幕等的同步调用，一次 5 秒长尾会被平均值藏起来。② <strong>失败分两类记账</strong>：<code>network</code> 与 <code>timeout</code> 分开统计——前者改配置永远改不好，混算会掩盖真因。③ <strong>样本量如实标注</strong>：本页为 2026-10-31 20:22 运行快照，真实用户可用性测试尚未开展（见说明书 7.4 节）。</p>
+
+  <div class="foot">
+    随行帮办 AssistGuide v0.9.2　｜　仓库内 <code>docs/self-assessment.md</code> 给出 21 项生产级自评（79.2/100）与逐项证据　｜　截图取自真实运行，未做界面修饰
+  </div>
+</body>
+</html>
