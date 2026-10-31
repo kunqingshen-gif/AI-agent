@@ -3,7 +3,21 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.data/**', 'docs/**/*.html'],
+    /*
+     * deploy/ 与 delivery/ 是打包出去的分发副本，不是本仓库的源码。
+     * 一次发布做过 deploy/ 之后，lint 把副本里的代码也扫了一遍，
+     * 于是「代码风格」这一步突然红了两百多条——报的不是本仓库的问题，
+     * 却会让一键验证整体失败。分发目录在这里一次性排除。
+     */
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      'coverage/**',
+      '.data/**',
+      'docs/**/*.html',
+      'deploy/**',
+      'delivery/**',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
