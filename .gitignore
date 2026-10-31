@@ -7,3 +7,6 @@ coverage/
 *.log
 .DS_Store
 Thumbs.db
+
+# 一键复现生成的报告（含 base64 截图，每次内容不同，不入库）
+demo-report.html

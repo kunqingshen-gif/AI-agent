@@ -26,7 +26,8 @@
     "test:coverage": "vitest run --coverage",
     "smoke": "tsx scripts/smoke.ts",
     "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
-    "pdf": "node scripts/build-manual-pdf.mjs"
+    "pdf": "node scripts/build-manual-pdf.mjs",
+    "demo:check": "node scripts/demo-check.mjs"
   },
   "dependencies": {
     "@fastify/helmet": "^13.2.0",

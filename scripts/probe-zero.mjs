@@ -119,7 +119,18 @@ async function main() {
     }
     return false;
   };
-  const check = (label, ok, detail = '') => console.log(`  ${ok ? '✓' : '✗'} ${label}${detail ? `｜${detail}` : ''}`);
+  /*
+   * 失败项要能改变退出码。
+   *
+   * 早前这里只打印不判定：哪怕 20 项全红，脚本也返回 0，
+   * 上层「一键复现」照样报通过——验证看着绿、其实没验。
+   * 自检工具一旦会说谎，比没有工具更危险。
+   */
+  let failures = 0;
+  const check = (label, ok, detail = '') => {
+    if (!ok) failures += 1;
+    console.log(`  ${ok ? '✓' : '✗'} ${label}${detail ? `｜${detail}` : ''}`);
+  };
 
   /* ── 1. 起手页：一条路 ── */
   console.log('\n== 起手页（第一次打开） ==');
@@ -229,6 +240,11 @@ async function main() {
   child.kill();
   ws.close();
   console.log('\n截图目录：.data/zero');
+  if (failures > 0) {
+    console.log(`\n✗ ${failures} 项未通过`);
+    process.exit(1);
+  }
+  console.log('\n✓ 全部通过');
 }
 
 main().catch((error) => {

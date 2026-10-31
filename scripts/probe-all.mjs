@@ -122,6 +122,15 @@ async function main() {
   };
 
   const report = [];
+  /**
+   * 动作型按钮：点了本来就不该跳屏。
+   *
+   * 「字体调大」是开关，「联系客服」弹窗——它们不是导航入口。
+   * 早前把这两个混在「入口」里判，结果每轮都报 2 个未跳转，
+   * 又因为探针不设退出码，这点一直没人管。
+   * 现在把它们单列：不算未跳转，改成校验「效果是否真的发生了」。
+   */
+  const ACTION_ONLY = ['字体调大', '联系客服'];
   const reset = async () => {
     await send('Page.navigate', { url: BASE });
     await sleep(1600);
@@ -143,10 +152,11 @@ async function main() {
       await sleep(650);
       const title = await titleOf();
       const toast = await toastOf();
+      const actionOnly = ACTION_ONLY.some((w) => (info?.text ?? '').includes(w));
       const moved = title !== before;
-      const line = `${moved ? '✓' : '✗'} ${info?.text ?? '(无)'} → ${title}${toast ? `｜提示：${toast}` : ''}${info?.hitSelf ? '' : '｜⚠被遮挡'}`;
+      const line = `${moved || actionOnly ? '✓' : '✗'} ${info?.text ?? '(无)'} → ${title}${toast ? `｜提示：${toast}` : ''}${info?.hitSelf ? '' : '｜⚠被遮挡'}`;
       console.log(`  ${line}`);
-      report.push({ tab: screenName, text: info?.text, moved, title, toast, occlusion: !info?.hitSelf });
+      report.push({ tab: screenName, text: info?.text, moved, actionOnly, title, toast, occlusion: !info?.hitSelf });
     }
   };
 
@@ -169,7 +179,8 @@ async function main() {
   await sleep(500);
   const fontSizeAfter = await evaluate(`getComputedStyle(document.querySelector('.list-label')).fontSize`);
   await shot('20-font-large');
-  console.log(`\n字号：${fontSizeBefore} → ${fontSizeAfter}`);
+  const fontGrew = fontSizeBefore !== fontSizeAfter;
+  console.log(`\n字号：${fontSizeBefore} → ${fontSizeAfter} ${fontGrew ? '✓ 真的变大了' : '✗ 没变'}`);
 
   await reset();
   await clickTab('我的');
@@ -185,7 +196,7 @@ async function main() {
   await sleep(600);
   const modal = await evaluate(`document.querySelector('.modal h3')?.textContent ?? null`);
   await shot('21-help-modal');
-  console.log(`客服弹窗：${modal ?? '未弹出'}`);
+  console.log(`客服弹窗：${modal ?? '未弹出'} ${modal ? '✓' : '✗ 没弹出来'}`);
 
   // 服务页宫格是否首屏可见（不用滚动就能看到宫格）
   await evaluate(`document.querySelector('.modal-mask')?.click()`);
@@ -202,14 +213,29 @@ async function main() {
   await shot('22-service-first-screen');
   console.log(`服务页宫格：${JSON.stringify(gridView)}`);
 
-  const failed = report.filter((r) => !r.moved);
+  const failed = report.filter((r) => !r.moved && !r.actionOnly);
   const occluded = report.filter((r) => r.occlusion);
-  console.log(`\n合计 ${report.length} 个入口，未跳转 ${failed.length} 个，被遮挡 ${occluded.length} 个`);
+  console.log(`\n合计 ${report.length} 个可点元素，未跳转 ${failed.length} 个，被遮挡 ${occluded.length} 个`);
   if (failed.length) console.log('未跳转：', JSON.stringify(failed.map((f) => `${f.tab}/${f.text}`), null, 0));
   if (occluded.length) console.log('被遮挡：', JSON.stringify(occluded.map((f) => `${f.tab}/${f.text}`), null, 0));
+  console.log(`动作型按钮：字号变大 ${fontGrew ? '✓' : '✗'}，客服弹窗 ${modal ? '✓' : '✗'}`);
+
+  /*
+   * 退出码必须真实反映结果。
+   *
+   * 早前这里没有 process.exit(1)：哪怕真有入口点不动，脚本也返回 0，
+   * 上层「一键复现」于是把它当通过——验证看着绿、其实没验。
+   * 自检工具一旦会说谎，比没有工具更危险。
+   */
+  const hardFail = failed.length + occluded.length + (fontGrew ? 0 : 1) + (modal ? 0 : 1);
 
   ws.close();
   child.kill();
+  if (hardFail > 0) {
+    console.log(`\n✗ 可达性验证未通过：${hardFail} 项`);
+    process.exit(1);
+  }
+  console.log('\n✓ 可达性验证通过');
 }
 
 main().catch((e) => {
