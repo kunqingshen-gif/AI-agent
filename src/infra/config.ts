@@ -19,6 +19,12 @@ const EnvSchema = z.object({
   DATA_DIR: z.string().default('./.data'),
   /** 提示词配置文件；不存在则用内置默认值，格式错则启动失败 */
   PROMPTS_FILE: z.string().default('./config/prompts.json'),
+  /**
+   * 长期档案有效期（天）。
+   * 定这个数的理由：老人办的多是周期性事项（低保年审、养老金认证一年一次），
+   * 太短等于每次都要重新问一遍，太长又会让三年前的信息冒充「了解这个人」。
+   */
+  PROFILE_TTL_DAYS: z.coerce.number().int().min(1).max(3650).default(180),
 });
 
 export type AppConfig = {
@@ -37,6 +43,8 @@ export type AppConfig = {
   dataDir: string;
   /** 提示词配置文件路径（不存在则用内置默认值） */
   promptsFile: string;
+  /** 长期档案有效期（天） */
+  profileTtlDays: number;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -61,6 +69,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     guardrailMode: e.GUARDRAIL_MODE,
     dataDir: e.DATA_DIR,
     promptsFile: e.PROMPTS_FILE,
+    profileTtlDays: e.PROFILE_TTL_DAYS,
   };
 }
 

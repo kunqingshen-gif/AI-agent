@@ -141,6 +141,35 @@ export interface UserProfile {
   dialect?: '普通话' | '闽南语' | '粤语' | '四川话';
 }
 
+/**
+ * 可以长期记下的档案字段。
+ *
+ * 这是一份**白名单**，不是 UserProfile 的子集随手挑几个：
+ * 只有「下次还能用上、且泄露了也不致命」的信息才配留下来。
+ *
+ * 刻意不在其中的：身份证号、手机号、家庭收入。它们只在一次办理里过一遍内存，
+ * 不进档案、不落盘。理由很直白——这些字段一旦存下来，
+ * 这个产品就从「帮老人办事」变成了「手里有一份老人名册」。
+ */
+export interface ProfileMemory {
+  displayName?: string;
+  age?: number;
+  region?: string;
+  digitalLiteracy?: 'low' | 'medium' | 'high';
+  livingAlone?: boolean;
+  hearingImpaired?: boolean;
+}
+
+/** 档案的读取视图：记了什么、什么时候记的、什么时候忘 */
+export interface ProfileMemoryView {
+  memory: ProfileMemory;
+  /** stored：这次是读了上次记住的；session：这次才建的，还没落盘 */
+  source: 'stored' | 'session';
+  updatedAt?: number;
+  /** 到期时间；过期后不再参与引导措辞 */
+  expiresAt?: number;
+}
+
 export interface Intent {
   taskId: FlowId;
   confidence: number;

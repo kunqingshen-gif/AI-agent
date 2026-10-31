@@ -3,6 +3,8 @@
  * 好处是模型厂商可替换、测试可注入假实现（见 tests/）。
  */
 
+import type { ProfileMemory } from '@shared/types';
+
 export interface LlmRequest {
   system: string;
   user: string;
@@ -74,6 +76,29 @@ export interface LlmStats {
   avgTokens: number;
 }
 
+/* ────────────────────────── 档案记忆 ────────────────────────── */
+
+export interface StoredProfile {
+  memory: ProfileMemory;
+  updatedAt: number;
+  /** 到期时间；过了这个点就不再参与引导措辞 */
+  expiresAt: number;
+}
+
+/**
+ * 长期档案的存取端口。
+ *
+ * 分层意图：一次会话里的东西（当前屏幕、乱点次数）是**短期记忆**，活在内存里；
+ * 这位老人「怎么称呼、多大年纪、话该密还是该疏」是**长期记忆**，要跨会话留着。
+ * 两者的生命周期、过期策略、隐私敏感度都不同，所以不放在同一个地方。
+ */
+export interface ProfileStorePort {
+  /** 读不到、已过期、文件坏了，都返回 null——档案缺失不能拦住老人办事 */
+  load(ownerId: string): StoredProfile | null;
+  save(ownerId: string, memory: ProfileMemory): StoredProfile;
+  forget(ownerId: string): boolean;
+}
+
 export interface TelemetryEvent {
   type:
     | 'session.started'
@@ -107,7 +132,16 @@ export interface TelemetryEvent {
      *
      * 这条事件是「运营迭代」的唯一入口：没有它，提示词和知识库只能靠拍脑袋改。
      */
-    | 'feedback.given';
+    | 'feedback.given'
+    /**
+     * 老人自己改了档案（称呼 / 怎么讲 / 独居与否）。
+     *
+     * 值得单独埋点：档案是唯一「用户亲口纠正我们的地方」。
+     * 如果改了以后引导措辞没变，这条埋点就是证据。
+     */
+    | 'profile.updated'
+    /** 老人要求忘掉他的信息（合规要求，不是可选功能） */
+    | 'profile.forgotten';
   sessionId: string;
   at: number;
   payload: Record<string, unknown>;

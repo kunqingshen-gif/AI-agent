@@ -9,13 +9,15 @@ import type {
   RescueHint,
   ScreenId,
   SessionMetrics,
+  ProfileMemory,
+  ProfileMemoryView,
   SlotName,
   TaskId,
   UserProfile,
 } from '@shared/types';
 import { isCustomFlow } from '@shared/types';
 import { SCREENS } from '@shared/screens';
-import type { LlmPort, LlmStats, TelemetryPort, ClockPort } from '../ports';
+import type { LlmPort, LlmStats, ProfileStorePort, TelemetryPort, ClockPort } from '../ports';
 import type { TaskFlow } from '../domain/catalog';
 import { TASK_FLOWS, TASK_LIST } from '../domain/catalog';
 import { activeNode, decide } from '../domain/guide-engine';
@@ -76,6 +78,13 @@ export interface SessionState {
   finished: boolean;
   /** 用户对这一单的最终反馈；只记一次，后到的覆盖前一次（用户改主意是允许的） */
   feedback?: FeedbackVerdict;
+  /**
+   * 这台设备上的档案编号。为空表示「这次不留名」——
+   * 不留名就只活在本次会话里，关掉即忘，这也是一种正当选择。
+   */
+  ownerId?: string;
+  /** 本次档案是读回来的，还是刚建的（决定界面上显示「记得」还是「刚记下」） */
+  profileSource?: 'stored' | 'session';
 }
 
 export interface InterpretResult {
@@ -131,6 +140,11 @@ export interface ServiceOptions {
    * 只是一次传参，不需要改代码、也不需要重建服务。
    */
   prompts?: PromptSet;
+  /**
+   * 长期档案存储。不传就是「没有记忆」——
+   * 这样测试与无状态部署仍能跑，而记忆是可插拔的能力，不是必需品。
+   */
+  profiles?: ProfileStorePort;
 }
 
 const DEFAULT_MAX_SESSIONS = 2000;
@@ -210,11 +224,16 @@ export class AssistService {
 
   /* ─────────────── 会话 ─────────────── */
 
-  createSession(profile?: Partial<UserProfile>): SessionState {
+  createSession(profile?: Partial<UserProfile>, memory?: { ownerId?: string; stored?: ProfileMemory }): SessionState {
     const now = this.clock.now();
     const session: SessionState = {
       id: randomUUID(),
-      profile: { ...SIMULATED_PROFILE, ...profile },
+      /*
+       * 三层叠加，越靠后越可信：
+       *   内置默认值 → 上次记住的档案 → 这次用户明确说的。
+       * 反过来（拿记忆盖住用户这次的话）就会变成「您上次说您眼睛不好」这种自作聪明的纠正。
+       */
+      profile: { ...SIMULATED_PROFILE, ...memory?.stored, ...profile },
       intent: null,
       flow: null,
       completed: new Set<string>(),
@@ -227,6 +246,8 @@ export class AssistService {
       guardrailsTriggered: 0,
       handoffs: 0,
       finished: false,
+      ...(memory?.ownerId ? { ownerId: memory.ownerId } : {}),
+      profileSource: memory?.stored ? 'stored' : 'session',
     };
     this.rememberSession(session);
     this.telemetry.record({
@@ -238,8 +259,109 @@ export class AssistService {
     return session;
   }
 
+  /* ─────────────── 长期档案 ─────────────── */
+
+  /**
+   * 老人能看到「你到底记了我什么」。
+   *
+   * 这一条不是锦上添花：记忆型产品最该被追问的就是这句话。
+   * 答不上来，等于要求老人凭信任交出自己的画像。
+   */
+  profileView(sessionId: string): ProfileMemoryView | null {
+    const session = this.sessions.get(sessionId);
+    if (!session) return null;
+    const memory = toMemory(session.profile);
+    const stored = session.ownerId ? this.options.profiles?.load(session.ownerId) : null;
+    return {
+      memory,
+      source: stored ? 'stored' : 'session',
+      ...(stored ? { updatedAt: stored.updatedAt, expiresAt: stored.expiresAt } : {}),
+    };
+  }
+
+  /**
+   * 老人自己改档案：改完立刻影响后面的措辞，不需要重开一次会话。
+   *
+   * 为什么要「立刻」：如果改完要等下一次进来才生效，用户唯一的感受是「它没听我的」。
+   */
+  updateMemory(
+    sessionId: string,
+    patch: ProfileMemory,
+  ): { view: ProfileMemoryView; message: string } | null {
+    const session = this.sessions.get(sessionId);
+    if (!session) return null;
+
+    const before = session.profile.digitalLiteracy;
+    session.profile = { ...session.profile, ...patch };
+    session.lastSeenAt = this.clock.now();
+
+    /*
+     * 措辞缓存必须整体作废。
+     *
+     * 缓存键里带了数字素养，所以「改了怎么讲」本来就命中不了旧条目；
+     * 但年龄、独居与否也在提示词里，却不进键——那就会出现
+     * 「说改成独居了，讲法还是按有人陪着讲的」。宁可全清，也不留这种半对。
+     */
+    this.rewriteCache.clear();
+
+    const stored = session.ownerId ? this.options.profiles?.save(session.ownerId, toMemory(session.profile)) : null;
+    if (stored && session.ownerId) session.profileSource = 'stored';
+
+    this.telemetry.record({
+      type: 'profile.updated',
+      sessionId,
+      at: this.clock.now(),
+      payload: {
+        fields: Object.keys(patch).join(','),
+        digitalLiteracy: session.profile.digitalLiteracy,
+        persisted: Boolean(stored),
+      },
+    });
+
+    return {
+      view: this.profileView(sessionId) ?? { memory: toMemory(session.profile), source: 'session' },
+      message:
+        before !== session.profile.digitalLiteracy
+          ? literacyAck(session.profile.digitalLiteracy)
+          : '记住了。以后我就按这个跟您说话。',
+    };
+  }
+
+  /** 忘掉我：删档案、断开关联，本次会话退回默认档案 */
+  forgetMemory(sessionId: string): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session) return false;
+    const removed = session.ownerId ? (this.options.profiles?.forget(session.ownerId) ?? false) : false;
+    session.ownerId = undefined;
+    session.profile = { ...SIMULATED_PROFILE };
+    session.profileSource = 'session';
+    this.rewriteCache.clear();
+    this.telemetry.record({
+      type: 'profile.forgotten',
+      sessionId,
+      at: this.clock.now(),
+      payload: { removed },
+    });
+    return removed;
+  }
+
   getSession(id: string): SessionState | undefined {
     return this.sessions.get(id);
+  }
+
+  /**
+   * 开一次会话：带着这台设备上记住的档案进来。
+   *
+   * 「先读档案、再建会话」放在应用层而不是路由里：
+   * 这是业务决定（记忆优先于默认值、但让位于用户这次明确说的话），
+   * 换个入口（小程序、电话机器人）时不该重写一遍。
+   */
+  openSession(profile?: Partial<UserProfile>, ownerId?: string): SessionState {
+    const stored = ownerId ? (this.options.profiles?.load(ownerId) ?? null) : null;
+    const memory: { ownerId?: string; stored?: ProfileMemory } = {};
+    if (ownerId) memory.ownerId = ownerId;
+    if (stored) memory.stored = stored.memory;
+    return this.createSession(profile, memory);
   }
 
   /** 对外暴露模型通道状态，用于 /healthz、/api/meta 与前端徽标 */
@@ -1270,4 +1392,28 @@ export class AssistService {
     if (!value) return undefined;
     return { value, source: 'profile', label: '按档案帮您填' };
   }
+}
+
+/**
+ * 从完整档案里挑出「可以留下来」的字段。
+ *
+ * 这里是白名单的落地点：加一个新字段必须同时改这里与 shared/types.ts 的 ProfileMemory，
+ * 否则它只是这次会话里过一下，不会被记住——这种「默认不记」的写法比为敏感字段逐个拉黑安全。
+ */
+function toMemory(profile: UserProfile): ProfileMemory {
+  return {
+    displayName: profile.displayName,
+    age: profile.age,
+    region: profile.region,
+    digitalLiteracy: profile.digitalLiteracy,
+    livingAlone: profile.livingAlone,
+    ...(profile.hearingImpaired === undefined ? {} : { hearingImpaired: profile.hearingImpaired }),
+  };
+}
+
+/** 改完怎么说回去：不能让老人改完还得自己猜「它听懂了没有」 */
+function literacyAck(level: UserProfile['digitalLiteracy']): string {
+  if (level === 'low') return '记住了。以后我说话更慢、更短，字也给您放大。';
+  if (level === 'medium') return '记住了。以后我少说两句，重点留着。';
+  return '记住了。以后我直接说下一步点哪儿，不再啰嗦。';
 }

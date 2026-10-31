@@ -3136,3 +3136,147 @@ input {
   line-height: 18px;
   text-align: center;
 }
+
+/* ─────────────── 长期档案（我记得您的事） ─────────────── */
+
+.memory-panel {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.memory-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+
+.memory-tag {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-3);
+  background: var(--bg);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+/* 「上次记下的」用绿色：这是产品真的记住了一个人，不是这次临时拼出来的 */
+.memory-tag.stored {
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+.memory-line {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+
+.memory-level {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.memory-label {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  flex: none;
+}
+
+.memory-level-btns {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.memory-level-btn {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink-2);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.memory-level-btn:hover:not(:disabled) {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.memory-level-btn.on {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-weight: 600;
+}
+
+.memory-level-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.memory-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.memory-note {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-3);
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+
+.memory-confirm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--danger);
+}
+
+.link-btn.danger {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.memory-empty .muted {
+  margin: 0;
+}
+
+/*
+ * 面板里的「忘掉我的信息」要像一句小声的提醒，不像一个主按钮。
+ * 全局 .link-btn 是为弹窗设计的整行大链接（width:100% 居中），
+ * 这里必须收窄：删除入口不该和「下一步」抢注意力。
+ */
+.memory-panel .link-btn {
+  width: auto;
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--ink-3);
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.memory-panel .link-btn:hover {
+  color: var(--danger);
+}
+
+.memory-confirm .link-btn {
+  font-size: 12px;
+  text-decoration: none;
+}

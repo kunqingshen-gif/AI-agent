@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GuideOutputSchema, PlanOutputSchema } from '@core/application/prompts';
+import { DEFAULT_PROMPTS, GuideOutputSchema, PlanOutputSchema, buildGuideUserPrompt } from '@core/application/prompts';
 
 /**
  * 模型输出校验的处置原则。
@@ -66,5 +66,33 @@ describe('规划输出校验', () => {
       plan({ steps: [{ screenId: 'x'.repeat(41), goal: '进入', instruction: '点一下' }] }),
     );
     expect(parsed.success).toBe(false);
+  });
+});
+
+describe('档案如何影响说法', () => {
+  const base = {
+    flow: { taskId: 'allowance.renew', title: '低保定期复核', hotkey: '' } as never,
+    screen: { app: '政务服务', title: '首页', semantics: '九宫格入口', blocks: [] } as never,
+    nodeIntent: '进入民政服务',
+    attemptsOnScreen: 0,
+    ruleInstruction: '点『民政服务』',
+    offPath: false,
+  };
+
+  it('同一屏、同一动作，档位不同提示词就不同', () => {
+    const low = buildGuideUserPrompt({ ...base, profile: { age: 68, livingAlone: true, digitalLiteracy: 'low' } });
+    const high = buildGuideUserPrompt({ ...base, profile: { age: 68, livingAlone: true, digitalLiteracy: 'high' } });
+    expect(low).toContain('low');
+    expect(high).toContain('high');
+    expect(low).not.toBe(high);
+  });
+
+  it('系统提示词真的按三档给了字数上限，而不是只说一句「看情况」', () => {
+    /* 记忆若不能改变输出，就只是装饰。这条测试守的就是那句话有没有落到实处 */
+    const guide = DEFAULT_PROMPTS.guide;
+    expect(guide).toContain('数字素养');
+    expect(guide).toMatch(/低：不超过 \d+ 个字/);
+    expect(guide).toMatch(/中：不超过 \d+ 个字/);
+    expect(guide).toMatch(/高：不超过 \d+ 个字/);
   });
 });

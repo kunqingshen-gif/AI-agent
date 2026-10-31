@@ -62,10 +62,11 @@ npm run build && npm start
 ```bash
 npm run lint        # ESLint（含 no-explicit-any、类型导入一致性）
 npm run typecheck   # 前后端两套 tsconfig，strict + noUncheckedIndexedAccess
-npm run test        # Vitest：173 项，覆盖护栏、规则引擎、契约、编排、AI 规划校验、相关性拒排、提问识别与问答过滤、屏幕与导航一致性、引导链路首尾相接、起手页常办事项、熔断降级、限流、无障碍、内存上限、埋点轮转
+npm run test        # Vitest：217 项，覆盖护栏、规则引擎、契约、编排、AI 规划校验、相关性拒排、提问识别与问答过滤、屏幕与导航一致性、引导链路首尾相接、起手页常办事项、熔断降级、限流、无障碍、内存上限、埋点轮转、用量统计、长期档案与提示词处置
 npm run smoke       # 端到端：意图→引导→纠偏→护栏→救援→完成（需先启动服务）
 node scripts/capture.mjs  # 用无头浏览器走完流程并逐屏出图
 node scripts/probe-zero.mjs    # 零学习三件套的真实点击验证（含「下一步」连按、语音失败降级）
+node scripts/shot-memory.mjs   # 长期档案：记住 → 刷新再认 → 忘掉（跨会话验证，不认三步之外的答案）
 npm run launch -- --check # 启动器自检：环境、构建产物新鲜度、端口占用，不启动服务
 ```
 
@@ -221,6 +222,7 @@ scripts/              launch.mjs（桌面启动器）、smoke.ts（端到端验�
 | `docs/landing-gap.md` | **落地差距清单**：五类差距、三道硬门槛、分期路径、五个必答问题 |
 | `docs/originality.md` | **原创性自查**：依赖与素材核验方法、借鉴边界（诚实版）、商标处理 |
 | `docs/launch-copy.md` | 快手发布文案与报名材料清单 |
+| `docs/self-assessment.md` | **21 项生产级自评**（79.2/100）：逐项证据、差在哪、下一轮优先级 |
 
 ---
 

@@ -24,7 +24,28 @@ const ProfileSchema = z
   })
   .partial();
 
-const SessionSchema = z.object({ profile: ProfileSchema.optional() });
+const SessionSchema = z.object({
+  profile: ProfileSchema.optional(),
+  /**
+   * 这台设备的档案编号（前端首次进入时生成、存在本机）。
+   *
+   * 为什么不用账号：老人不该为了办事先注册。
+   * 代价是换手机就丢了记忆——可以接受，总比让人先填一堆信息强。
+   */
+  ownerId: z.string().trim().min(8).max(64).optional(),
+});
+
+/** 档案可改的字段：白名单，和 ProfileMemory 一一对应 */
+const ProfilePatchSchema = z
+  .object({
+    displayName: z.string().trim().min(1).max(20),
+    age: z.number().int().min(40).max(110),
+    digitalLiteracy: z.enum(['low', 'medium', 'high']),
+    livingAlone: z.boolean(),
+    hearingImpaired: z.boolean(),
+  })
+  .partial()
+  .refine((data) => Object.keys(data).length > 0, { message: '至少要改一项' });
 
 const IntentSchema = z.object({
   sessionId: z.string().min(8).max(64),
@@ -170,13 +191,42 @@ export async function buildApp(deps: AppDeps) {
   app.post('/api/session', async (request, reply) => {
     const parsed = SessionSchema.safeParse(request.body ?? {});
     if (!parsed.success) return badRequest(reply, parsed.error.flatten());
-    const session = service.createSession(parsed.data.profile);
+    const session = service.openSession(parsed.data.profile, parsed.data.ownerId);
     return {
       sessionId: session.id,
       profile: session.profile,
       screenId: session.screenId,
       tasks: service.listTasks(),
+      /* 前端据此显示「我记得您：王秀兰 · 68 岁 · 大字慢讲」 */
+      memory: service.profileView(session.id),
     };
+  });
+
+  /* ── 长期档案：可查、可改、可忘 ── */
+
+  app.get('/api/session/:id/profile', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const view = service.profileView(id);
+    if (!view) return reply.status(404).send({ error: 'SESSION_NOT_FOUND', message: '会话已过期，请重新开始' });
+    return view;
+  });
+
+  app.patch('/api/session/:id/profile', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parsed = ProfilePatchSchema.safeParse(request.body ?? {});
+    if (!parsed.success) return badRequest(reply, parsed.error.flatten());
+    const result = service.updateMemory(id, parsed.data);
+    if (!result) return reply.status(404).send({ error: 'SESSION_NOT_FOUND', message: '会话已过期，请重新开始' });
+    return { ...result, profile: service.getSession(id)?.profile };
+  });
+
+  app.delete('/api/session/:id/profile', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    if (!service.getSession(id)) {
+      return reply.status(404).send({ error: 'SESSION_NOT_FOUND', message: '会话已过期，请重新开始' });
+    }
+    const removed = service.forgetMemory(id);
+    return { forgotten: removed, memory: service.profileView(id), profile: service.getSession(id)?.profile };
   });
 
   app.post('/api/intent', async (request, reply) => {

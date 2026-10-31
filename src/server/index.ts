@@ -1,11 +1,13 @@
 import 'dotenv/config';
 import dns from 'node:dns';
+import path from 'node:path';
 import { loadConfig } from '@infra/config';
 import { createLogger } from '@infra/logger';
 import type { Logger } from '@infra/logger';
 import { DashScopeLlm, DisabledLlm } from '@infra/llm/dashscope';
 import { JsonlTelemetry } from '@infra/telemetry/jsonl';
 import { loadPromptSet } from '@infra/prompt-store';
+import { JsonProfileStore } from '@infra/profile-store';
 import type { LlmPort } from '@core/ports';
 import { AssistService } from '@core/application/assist-service';
 import { buildApp } from './app';
@@ -50,8 +52,20 @@ async function main(): Promise<void> {
     logger.info({ version: loaded.prompts.version }, '提示词已生效');
   }
 
+  /*
+   * 长期档案：跨会话记住「怎么称呼、多大年纪、话该密还是该疏」。
+   *
+   * 它和提示词、埋点放在同一层（基础设施），因为换存储介质时只换这一行。
+   */
+  const profiles = new JsonProfileStore(
+    path.join(config.dataDir, 'profiles.json'),
+    config.profileTtlDays,
+    logger,
+  );
+
   const service = new AssistService(llm, telemetry, { now: () => Date.now() }, logger, {
     prompts: loaded.prompts,
+    profiles,
   });
   const app = await buildApp({ config, logger, service, telemetry });
 

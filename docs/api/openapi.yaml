@@ -16,6 +16,8 @@ tags:
     description: 会话与画像
   - name: assist
     description: 意图、引导、填表、救援
+  - name: memory
+    description: 长期档案：可查、可改、可忘
   - name: ops
     description: 运维与观测
 
@@ -104,6 +106,11 @@ paths:
               type: object
               properties:
                 profile: { $ref: '#/components/schemas/UserProfilePatch' }
+                ownerId:
+                  type: string
+                  minLength: 8
+                  maxLength: 64
+                  description: 本机档案编号（前端生成、存 localStorage）。传了就带上这台设备记住的档案；不传即「不留名」，只活在本次会话
       responses:
         '200':
           description: 会话已创建
@@ -119,6 +126,7 @@ paths:
                   tasks:
                     type: array
                     items: { $ref: '#/components/schemas/TaskSpecSummary' }
+                  memory: { $ref: '#/components/schemas/ProfileMemoryView' }
         '400': { $ref: '#/components/responses/BadRequest' }
 
   /api/intent:
@@ -284,6 +292,78 @@ paths:
                 properties:
                   script: { type: string }
                   hotline: { type: string }
+
+  /api/session/{id}/profile:
+    get:
+      tags: [memory]
+      summary: 我记着您什么
+      description: 把长期档案摊开给老人看。返回值同时给出到期时间——记多久、什么时候忘，都该说清楚。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfileMemoryView' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [memory]
+      summary: 改一项记忆（改完立即影响引导措辞）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                displayName: { type: string, maxLength: 20 }
+                age: { type: integer, minimum: 40, maximum: 110 }
+                digitalLiteracy: { type: string, enum: [low, medium, high] }
+                livingAlone: { type: boolean }
+                hearingImpaired: { type: boolean }
+      responses:
+        '200':
+          description: 已记住
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  view: { $ref: '#/components/schemas/ProfileMemoryView' }
+                  message: { type: string, description: 回给老人的一句话，例如「以后我说话更慢、更短」 }
+                  profile: { $ref: '#/components/schemas/UserProfile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [memory]
+      summary: 忘掉我的信息
+      description: 删档案并断开本机会话的关联，会话退回默认档案。合规要求，不是可选功能。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: 已删除
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  forgotten: { type: boolean, description: 之前是否真的有一份档案 }
+                  memory: { $ref: '#/components/schemas/ProfileMemoryView' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /api/session/{id}/metrics:
     get:
@@ -460,6 +540,35 @@ paths:
         '404':
           description: 码不存在
 
+  /api/feedback:
+    post:
+      tags: [quality]
+      summary: 记录办件结果反馈
+      description: |
+        结果页问一句「这件事办成了吗」。三档不对等：
+        - worked：办成了，用于算真实一次办成率；
+        - failed：没办成，但指引没说错（外部原因）；
+        - wrong：**它说错了**，唯一能反哺提示词与知识库的信号。
+        允许重复提交（改主意），后到覆盖前一次结论，但埋点不去重。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, verdict]
+              properties:
+                sessionId: { type: string, minLength: 8, maxLength: 64 }
+                verdict: { type: string, enum: [worked, failed, wrong] }
+                note: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: 返回更新后的会话指标
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionMetrics' }
+        '404':
+          description: 会话不存在或已过期
 components:
   responses:
     BadRequest:
@@ -483,6 +592,27 @@ components:
               message: { type: string }
 
   schemas:
+    ProfileMemoryView:
+      type: object
+      required: [memory, source]
+      properties:
+        memory:
+          type: object
+          description: 白名单字段。身份证号、手机号、家庭收入不在其中——它们只在单次办理里过一遍内存
+          properties:
+            displayName: { type: string }
+            age: { type: integer }
+            region: { type: string }
+            digitalLiteracy: { type: string, enum: [low, medium, high] }
+            livingAlone: { type: boolean }
+            hearingImpaired: { type: boolean }
+        source:
+          type: string
+          enum: [stored, session]
+          description: stored = 这次是读了上次记住的；session = 这次才建，还没落盘
+        updatedAt: { type: integer, description: 毫秒时间戳 }
+        expiresAt: { type: integer, description: 毫秒时间戳；过期后不再参与引导措辞 }
+
     PreflightResult:
       type: object
       required: [taskId, taskTitle, verdict, score, onePassRate, items, blockers, warnings, summary, fixes, basis]
@@ -723,33 +853,3 @@ components:
         traps:
           type: array
           items: { type: string }
-
-  /api/feedback:
-    post:
-      tags: [quality]
-      summary: 记录办件结果反馈
-      description: |
-        结果页问一句「这件事办成了吗」。三档不对等：
-        - worked：办成了，用于算真实一次办成率；
-        - failed：没办成，但指引没说错（外部原因）；
-        - wrong：**它说错了**，唯一能反哺提示词与知识库的信号。
-        允许重复提交（改主意），后到覆盖前一次结论，但埋点不去重。
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [sessionId, verdict]
-              properties:
-                sessionId: { type: string, minLength: 8, maxLength: 64 }
-                verdict: { type: string, enum: [worked, failed, wrong] }
-                note: { type: string, maxLength: 200 }
-      responses:
-        '200':
-          description: 返回更新后的会话指标
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/SessionMetrics' }
-        '404':
-          description: 会话不存在或已过期

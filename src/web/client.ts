@@ -5,6 +5,8 @@ import type {
   GuideAction,
   Intent,
   ScreenId,
+  ProfileMemory,
+  ProfileMemoryView,
   SessionMetrics,
   SlotName,
   TaskId,
@@ -19,9 +21,15 @@ import type { CollabTicket } from '@core/domain/collab';
 const BASE = '';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  /*
+   * 只有带 body 时才声明 content-type。
+   *
+   * 早前这里无条件写死 json，于是 DELETE 这类无 body 的请求会被服务端
+   * 判成「声明了 JSON 却没有内容」→ 400。错误看着像后端的，其实是这行头。
+   */
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'content-type': 'application/json' },
     ...init,
+    headers: { ...(init?.body ? { 'content-type': 'application/json' } : {}), ...init?.headers },
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { message?: string };
@@ -35,6 +43,14 @@ export interface SessionResponse {
   profile: UserProfile;
   screenId: ScreenId;
   tasks: Array<{ taskId: TaskId; title: string; category: string; hotkey: string }>;
+  /** 这台设备上记住的档案；null 表示服务端没开记忆能力 */
+  memory?: ProfileMemoryView | null;
+}
+
+export interface MemoryUpdateResponse {
+  view: ProfileMemoryView;
+  message: string;
+  profile: UserProfile;
 }
 
 export interface InterpretResponse {
@@ -67,8 +83,22 @@ export interface MetaResponse {
 
 export const api = {
   meta: () => request<MetaResponse>('/api/meta'),
-  createSession: (profile?: Partial<UserProfile>) =>
-    request<SessionResponse>('/api/session', { method: 'POST', body: JSON.stringify({ profile }) }),
+  createSession: (profile?: Partial<UserProfile>, ownerId?: string) =>
+    request<SessionResponse>('/api/session', {
+      method: 'POST',
+      body: JSON.stringify({ profile, ...(ownerId ? { ownerId } : {}) }),
+    }),
+  /** 我记着您什么 */
+  profile: (sessionId: string) => request<ProfileMemoryView>(`/api/session/${sessionId}/profile`),
+  /** 改一项记忆，改完立刻影响后面的说法 */
+  patchProfile: (sessionId: string, patch: ProfileMemory) =>
+    request<MemoryUpdateResponse>(`/api/session/${sessionId}/profile`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+  /** 忘掉我的信息 */
+  forgetProfile: (sessionId: string) =>
+    request<{ forgotten: boolean }>(`/api/session/${sessionId}/profile`, { method: 'DELETE' }),
   interpret: (sessionId: string, utterance: string) =>
     request<InterpretResponse>('/api/intent', { method: 'POST', body: JSON.stringify({ sessionId, utterance }) }),
   guide: (params: {

@@ -329,6 +329,8 @@ async function main() {
     runProbe('探针 · 管家能力', 'node scripts/probe-guardian.mjs', { timeout: 300_000 });
     run('截图 · Agent 视线', 'node scripts/shot-sight.mjs', { allowFail: true });
     runProbe('探针 · 结果反馈闭环', 'node scripts/shot-feedback.mjs', { timeout: 240_000 });
+    /* 记忆必须跨会话验证：刷新后还记得才算数，同一次里点两下谁都能做到 */
+    runProbe('探针 · 长期档案（记住→再认→忘掉）', 'node scripts/shot-memory.mjs', { timeout: 240_000 });
   } else {
     for (const label of ['探针 · 全屏可达性', '探针 · 零学习成本', '探针 · 管家能力']) {
       steps.push({

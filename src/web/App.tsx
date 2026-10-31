@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { AnswerPayload, FeedbackVerdict, GuideAction, Intent, ScreenId, SessionMetrics, SlotName } from '@shared/types';
+import type {
+  AnswerPayload,
+  FeedbackVerdict,
+  GuideAction,
+  Intent,
+  ProfileMemory,
+  ProfileMemoryView,
+  ScreenId,
+  SessionMetrics,
+  SlotName,
+} from '@shared/types';
 import { SCREENS } from '@shared/screens';
 import { api, type InterpretResponse, type MetaResponse, type SessionResponse } from './client';
 import { PARENT, TAB_OF, isBrowseControl, resolveTarget } from './nav';
@@ -15,6 +25,27 @@ import { GuideCard } from './components/GuideCard';
 import { AnswerCard } from './components/AnswerCard';
 import { FaceVerify } from './components/FaceVerify';
 import { MetricsBar } from './components/MetricsBar';
+import { ProfileMemoryPanel } from './components/ProfileMemoryPanel';
+
+/**
+ * 本机档案编号：不用注册也能记住这个人。
+ *
+ * 存在浏览器本地，换手机就丢——这是有意的取舍：
+ * 让 68 岁的人先注册账号才能办低保，是把门槛立在了最需要帮助的地方。
+ * 隐私模式下拿不到存储就返回空串，此时服务端按「不留名」处理，功能不受影响。
+ */
+function deviceId(): string {
+  const KEY = 'assist.device';
+  try {
+    const existing = window.localStorage.getItem(KEY);
+    if (existing && existing.length >= 8) return existing;
+    const created = `dev-${crypto.randomUUID()}`;
+    window.localStorage.setItem(KEY, created);
+    return created;
+  } catch {
+    return '';
+  }
+}
 
 /** 建立「表单控件 → 业务槽位」索引，用于把界面输入同步给 Agent */
 const FIELD_SLOT: Record<string, SlotName> = {};
@@ -74,6 +105,8 @@ export function App() {
   const [listening, setListening] = useState(false);
   const [speakOn, setSpeakOn] = useState(true);
   const [metrics, setMetrics] = useState<SessionMetrics | null>(null);
+  /** 长期档案：记了什么、怎么讲、何时忘 */
+  const [memory, setMemory] = useState<ProfileMemoryView | null>(null);
   const [rescue, setRescue] = useState<{ script: string; hotline: string } | null>(null);
   const [activeField, setActiveField] = useState<string | null>(null);
   const [fieldDraft, setFieldDraft] = useState('');
@@ -170,8 +203,9 @@ export function App() {
         let sid = session?.sessionId;
         if (!sid) {
           /* 关掉语音开关即视为听障/静音场景，服务端据此不再生成语音文案 */
-          const created = await api.createSession({ hearingImpaired: !speakOn });
+          const created = await api.createSession({ hearingImpaired: !speakOn }, deviceId());
           setSession(created);
+          setMemory(created.memory ?? null);
           sid = created.sessionId;
         }
         const result = await api.interpret(sid, utterance);
@@ -232,8 +266,9 @@ export function App() {
           /* 协办要挂在会话上：家人看到的那一页就是这条会话当前所在的屏 */
           let sid = session?.sessionId;
           if (!sid) {
-            const created = await api.createSession({ hearingImpaired: !speakOn });
+            const created = await api.createSession({ hearingImpaired: !speakOn }, deviceId());
             setSession(created);
+            setMemory(created.memory ?? null);
             sid = created.sessionId;
           }
           const ticket = await api.collabOpen(sid);
@@ -272,6 +307,33 @@ export function App() {
     },
     [session],
   );
+
+  /** 改一项记忆：改完服务端立刻用新说法，界面同步显示，不让老人猜生效没生效 */
+  const changeMemory = useCallback(
+    async (patch: ProfileMemory) => {
+      if (!session) return;
+      try {
+        const result = await api.patchProfile(session.sessionId, patch);
+        setMemory(result.view);
+        setSession((prev) => (prev ? { ...prev, profile: result.profile } : prev));
+        setToast(result.message);
+      } catch (error) {
+        setToast(error instanceof Error ? error.message : '没改成，稍后再试');
+      }
+    },
+    [session],
+  );
+
+  const forgetMemory = useCallback(async () => {
+    if (!session) return;
+    try {
+      await api.forgetProfile(session.sessionId);
+      setMemory(await api.profile(session.sessionId));
+      setToast('忘掉了。下次进来我会重新问您一遍。');
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : '没忘掉，稍后再试');
+    }
+  }, [session]);
 
   useEffect(() => {
     let alive = true;
@@ -836,6 +898,13 @@ export function App() {
               </ul>
             )}
           </div>
+
+          <ProfileMemoryPanel
+            view={memory}
+            disabled={busy}
+            onChange={(patch) => void changeMemory(patch)}
+            onForget={() => void forgetMemory()}
+          />
         </section>
       </main>
 
