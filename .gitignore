@@ -16,3 +16,4 @@ deploy/
 
 # 部署用的干净副本（不含 .env，不纳入版本库）
 deploy/
+delivery/
