@@ -328,6 +328,11 @@ export async function buildApp(deps: AppDeps) {
     events: await telemetry.summary(),
     /* 质量指标：反馈分档与「它说错了」占比——答辩时这一个数最说明问题 */
     quality: service.quality(),
+    /*
+     * 成本与延迟：tokens、p50/p95。之前这些只进日志，等于「能看不能算」，
+     * 被问「一次办事多少钱」只能估。现在是实测值。
+     */
+    llm: service.llmStats(),
     at: Date.now(),
   }));
 

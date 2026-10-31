@@ -110,14 +110,31 @@ async function main() {
   };
   const textOf = (selector) => evaluate(`document.querySelector(${JSON.stringify(selector)})?.textContent ?? null`);
   const countOf = (selector) => evaluate(`document.querySelectorAll(${JSON.stringify(selector)}).length`);
-  /* 模型通道比规则慢，固定 sleep 会把「还没回来」误判成「没有」 */
-  const waitFor = async (selector, timeout = 12000) => {
+  /*
+   * 模型通道比规则慢，固定 sleep 会把「还没回来」误判成「没有」。
+   *
+   * 上限给到 30 秒而不是 12 秒：点完卡片要走「意图 → 引导」两次模型调用，
+   * 实测单次 1.5–7 秒，两次叠加完全可能超过 12 秒。
+   * 早前的 12 秒会让探针间歇性红 6 项，而产品其实是好的——
+   * 探针误报和探针漏报一样有害：都让人不再相信它。
+   */
+  const waitFor = async (selector, timeout = 30000) => {
     const begin = Date.now();
     while (Date.now() - begin < timeout) {
       if (await countOf(selector)) return true;
       await sleep(200);
     }
     return false;
+  };
+  /** 等到某段文字出现为止，返回文本；超时返回 null */
+  const waitForText = async (selector, needle, timeout = 15000) => {
+    const begin = Date.now();
+    while (Date.now() - begin < timeout) {
+      const text = await textOf(selector);
+      if (text && text.includes(needle)) return text;
+      await sleep(200);
+    }
+    return null;
   };
   /*
    * 失败项要能改变退出码。
@@ -148,12 +165,18 @@ async function main() {
   console.log('\n== 点一件常办的事 ==');
   const tapped = await clickByText('本月水费', '.welcome-task');
   check('卡片点得到（未被遮挡）', tapped);
+  const pickAt = Date.now();
   const guided = await waitFor('.card-guide');
-  await sleep(400);
+  /* 这个耗时直接写进报告：老人点一下卡片，究竟等了几秒才看到「下一步」 */
+  const pickMs = Date.now() - pickAt;
+  const started = guided ? await waitForText('.intent-line', '生活缴费', 8000) : await textOf('.intent-line');
+  check(
+    '识别成立，不是弹个提示',
+    (started ?? '').includes('生活缴费'),
+    (started ?? '点了卡片 30 秒内没有出现确认行').replace(/\s+/g, ' '),
+  );
+  check('进入办事流程', guided, guided ? `点完到出引导 ${(pickMs / 1000).toFixed(1)} 秒` : '');
   await shot('41-after-pick');
-  const started = await textOf('.intent-line');
-  check('识别成立，不是弹个提示', (started ?? '').includes('生活缴费'), (started ?? '').replace(/\s+/g, ' '));
-  check('进入办事流程', guided);
 
   /* ── 3. 下一步大按钮：连按 ── */
   console.log('\n== 「下一步」大按钮 ==');
@@ -235,7 +258,8 @@ async function main() {
   const picked = await clickByText('低保资格复核', '.ask-layer .ask-task');
   check('降级路径点得动', picked);
   await waitFor('.card-guide');
-  check('点了就真的开始办', ((await textOf('.intent-line')) ?? '').includes('低保'));
+  const pickedText = await waitForText('.intent-line', '低保', 15000);
+  check('点了就真的开始办', Boolean(pickedText), pickedText ? pickedText.replace(/\s+/g, ' ') : '15 秒内没出现确认行');
 
   child.kill();
   ws.close();

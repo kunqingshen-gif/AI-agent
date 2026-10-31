@@ -161,25 +161,56 @@ export function buildPlanUserPrompt(utterance: string, hints: string[]): string 
     .join('\n');
 }
 
+/**
+ * 有界截断：模型写超字数时截到上限，而不是让整份结果作废。
+ *
+ * 为什么改这个：实测让模型规划「高龄津贴」，它把 reason 写了 240 字（上限 200），
+ * zod 于是判整份计划非法 → 老人听到的回答是「这件事我暂时答不上来」。
+ * 也就是说，**一句本该只进日志的解释，把一份完全正确的计划打成了废品**。
+ *
+ * 但对给老人看的文字，长度上限本身是产品约束（一屏一行读得完），不能简单放宽；
+ * 正确处置是截到上限——只损失半句话，不会让人白说一遍。
+ * 结构性错误（屏幕不存在、没有步骤）仍然硬拒，那些才该作废。
+ */
+function cutAtPunctuation(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const head = text.slice(0, max);
+  const idx = Math.max(...['。', '，', '、', '；', '！', '？', ' '].map((p) => head.lastIndexOf(p)));
+  /* 断点太靠前就先按字数截，总比只剩半句强 */
+  return idx >= max * 0.6 ? head.slice(0, idx) : head;
+}
+
+function bounded(min: number, max: number) {
+  return z
+    .string()
+    .transform((s) => cutAtPunctuation(s.trim(), max))
+    .pipe(z.string().min(min).max(max));
+}
+
+/** 只进日志、不进屏幕的说明字段：截断即可，永不作废整份结果 */
+function note(max: number) {
+  return z.string().transform((s) => s.slice(0, max));
+}
+
 export const GuideOutputSchema = z.object({
-  instruction: z.string().min(2).max(80),
-  speak: z.string().min(1).max(60).optional(),
+  instruction: bounded(2, 80),
+  speak: bounded(1, 60).optional(),
   confidence: z.number().min(0).max(1).default(0.6),
-  reason: z.string().max(120).optional(),
+  reason: note(120).optional(),
 });
 
 export const IntentOutputSchema = z.object({
   taskId: z.union([z.enum(TASK_IDS), z.literal('unknown')]),
   confidence: z.number().min(0).max(1),
   slots: z.record(z.string()).optional(),
-  restated: z.string().max(60).optional(),
-  reason: z.string().max(200).optional(),
+  restated: bounded(1, 60).optional(),
+  reason: note(200).optional(),
 });
 
 export const SlotOutputSchema = z.object({
   slots: z.record(z.string()),
   confidence: z.number().min(0).max(1).default(0.5),
-  reason: z.string().max(120).optional(),
+  reason: note(120).optional(),
 });
 
 /**
@@ -194,9 +225,9 @@ const PlanStepSchema = z.object({
   screenId: z.string().min(1).max(40),
   targetControlId: z.string().max(60).optional(),
   action: z.enum(['tap', 'input', 'read']).default('tap'),
-  goal: z.string().min(1).max(60),
-  instruction: z.string().min(2).max(80),
-  speak: z.string().max(60).optional(),
+  goal: bounded(1, 60),
+  instruction: bounded(2, 80),
+  speak: bounded(1, 60).optional(),
   guardrail: z.enum(GUARDRAIL_KINDS).nullish().catch(null),
 });
 
@@ -204,12 +235,12 @@ export const PlanOutputSchema = z
   .object({
     /** 相关性前置判断：原话不是办事请求时为 false。缺省视为 true（兼容不回该字段的模型） */
     plausible: z.boolean().default(true),
-    title: z.string().min(2).max(40).optional(),
-    category: z.string().max(20).optional(),
-    documents: z.array(z.string().min(1).max(30)).max(6).optional(),
+    title: bounded(2, 40).optional(),
+    category: bounded(2, 20).optional(),
+    documents: z.array(bounded(1, 30)).max(6).optional(),
     coverage: z.enum(['full', 'partial']).default('partial'),
     steps: z.array(PlanStepSchema).max(10).optional(),
-    reason: z.string().max(200).optional(),
+    reason: note(200).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.plausible) {

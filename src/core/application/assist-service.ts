@@ -15,7 +15,7 @@ import type {
 } from '@shared/types';
 import { isCustomFlow } from '@shared/types';
 import { SCREENS } from '@shared/screens';
-import type { LlmPort, TelemetryPort, ClockPort } from '../ports';
+import type { LlmPort, LlmStats, TelemetryPort, ClockPort } from '../ports';
 import type { TaskFlow } from '../domain/catalog';
 import { TASK_FLOWS, TASK_LIST } from '../domain/catalog';
 import { activeNode, decide } from '../domain/guide-engine';
@@ -169,6 +169,16 @@ export class AssistService {
     private readonly options: ServiceOptions = {},
   ) {
     this.prompts = options.prompts ?? DEFAULT_PROMPTS;
+  }
+
+  /**
+   * 模型用量快照（tokens、延迟分位）。
+   *
+   * 转发自模型适配器：应用层不知道也不该知道「一次调用多少钱」，
+   * 但要把这个数交给运维和答辩——所以只透传，不算账。
+   */
+  llmStats(): LlmStats | null {
+    return this.llm.stats?.() ?? null;
   }
 
   /** 当前提示词版本，供 `/api/meta` 与埋点使用 */
@@ -495,6 +505,17 @@ export class AssistService {
           };
           flow = known;
           source = 'llm';
+        } else if (parsed.success && parsed.data.taskId === 'unknown') {
+          /*
+           * 解析成功但 taskId 是 unknown：模型看懂了，只是这件事确实不在清单里。
+           * 这不是降级——接下来第 ③ 步会请它现场排路径。
+           */
+          this.telemetry.record({
+            type: 'intent.not-in-catalog',
+            sessionId,
+            at: this.clock.now(),
+            payload: { utterance: utterance.slice(0, 60) },
+          });
         } else {
           this.telemetry.record({
             type: 'llm.fallback',

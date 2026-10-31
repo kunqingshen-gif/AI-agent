@@ -1,5 +1,5 @@
 import type { AppConfig } from '../config';
-import type { LlmPort, LlmRequest } from '@core/ports';
+import type { LlmPort, LlmRequest, LlmStats } from '@core/ports';
 import type { Logger } from '../logger';
 
 /**
@@ -33,6 +33,22 @@ export class DashScopeLlm implements LlmPort {
   private brokenUntil = 0;
   private lastError: string | undefined;
 
+  /*
+   * 用量累计。只保留最近 200 条延迟样本：
+   * p95 用不着全部历史，而无限增长的数组会在长时间演示后慢慢吃掉内存。
+   */
+  private stat = {
+    calls: 0,
+    failures: 0,
+    timeouts: 0,
+    network: 0,
+    tokens: 0,
+    sampleTokens: 0,
+    tokenSamples: 0,
+  };
+  private readonly latencies: number[] = [];
+  private static readonly MAX_SAMPLES = 200;
+
   constructor(
     private readonly config: AppConfig['llm'],
     private readonly logger: Logger,
@@ -49,6 +65,43 @@ export class DashScopeLlm implements LlmPort {
     };
   }
 
+  private recordSuccess(latencyMs: number, tokens: number): void {
+    this.stat.calls += 1;
+    this.stat.tokens += tokens;
+    /* 只对返回了 usage 的调用算均值，否则分母会把「没报 token」的调用也算进去 */
+    if (tokens > 0) {
+      this.stat.sampleTokens += tokens;
+      this.stat.tokenSamples += 1;
+    }
+    this.latencies.push(latencyMs);
+    if (this.latencies.length > DashScopeLlm.MAX_SAMPLES) this.latencies.shift();
+  }
+
+  /**
+   * 用量快照。
+   *
+   * p95 而不是平均值：引导是有人盯着屏幕等着的同步调用，
+   * 「平均 800ms」会让一次 5 秒的长尾完全被掩盖，而用户只会记住那一次卡顿。
+   */
+  stats(): LlmStats {
+    const sorted = [...this.latencies].sort((a, b) => a - b);
+    const pick = (q: number) => {
+      if (sorted.length === 0) return 0;
+      const idx = Math.min(sorted.length - 1, Math.floor(q * sorted.length));
+      return sorted[idx] ?? 0;
+    };
+    return {
+      calls: this.stat.calls,
+      failures: this.stat.failures,
+      timeouts: this.stat.timeouts,
+      network: this.stat.network,
+      tokens: this.stat.tokens,
+      p50Ms: pick(0.5),
+      p95Ms: pick(0.95),
+      avgTokens: this.stat.tokenSamples > 0 ? Math.round(this.stat.sampleTokens / this.stat.tokenSamples) : 0,
+    };
+  }
+
   private trip(error: unknown): void {
     this.brokenUntil = Date.now() + BREAKER_COOLDOWN_MS;
     this.lastError = error instanceof LlmError ? error.code : 'unknown';
@@ -62,11 +115,18 @@ export class DashScopeLlm implements LlmPort {
     }
 
     /*
-     * 尽力而为的调用（问答、现场规划）多给一次重试：
-     * 实测本机经代理出网时，首个连接偶发 fetch failed（约 10s），第二次即成功。
-     * 这类失败与模型服务无关，不该让用户白等一顿还没答案。
+     * 重试预算。
+     *
+     * 尽力而为的调用（问答、现场规划）多给一次；
+     * 另外**网络层失败一律多给一次**，这条不分主链路还是旁路——
+     * 实测本机首个出网连接会被丢包，卡满 undici 的 10 秒连接超时后失败，
+     * 而紧接着的第二次只要 400ms。这类失败跟模型服务无关，
+     * 不该让老人白等一顿，然后听到「这件事我暂时答不上来」。
+     *
+     * 超时不在此列：那通常是模型侧排队，重试只会让人再多等一个超时周期。
      */
-    const attempts = this.config.maxRetries + 1 + (req.bestEffort ? 1 : 0);
+    const baseAttempts = this.config.maxRetries + 1 + (req.bestEffort ? 1 : 0);
+    let attempts = baseAttempts;
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -77,8 +137,15 @@ export class DashScopeLlm implements LlmPort {
         return content;
       } catch (error) {
         lastError = error;
-        const retryable = error instanceof LlmError && (error.code === 'timeout' || error.code === 'network' || (error.status ?? 0) >= 500);
+        const code = error instanceof LlmError ? error.code : 'unknown';
+        const status = error instanceof LlmError ? error.status : undefined;
         this.logger.warn({ traceId, attempt, err: String(error) }, 'llm 调用失败');
+
+        if (code === 'network' && attempts === baseAttempts) {
+          attempts += 1;
+          continue;
+        }
+        const retryable = code === 'timeout' || code === 'network' || (status ?? 0) >= 500;
         if (!retryable || attempt === attempts) break;
       }
     }
@@ -130,13 +197,30 @@ export class DashScopeLlm implements LlmPort {
         'llm 调用成功',
       );
       if (!content.trim()) throw new LlmError('模型返回空内容', 'empty');
+      this.recordSuccess(Date.now() - startedAt, json.usage?.total_tokens ?? 0);
       return content;
     } catch (error) {
-      if (error instanceof LlmError) throw error;
+      this.stat.failures += 1;
+      if (error instanceof LlmError) {
+        if (error.code === 'timeout') this.stat.timeouts += 1;
+        throw error;
+      }
       if (error instanceof Error && error.name === 'AbortError') {
+        this.stat.timeouts += 1;
         throw new LlmError(`模型超时（${timeoutMs}ms）`, 'timeout');
       }
-      throw new LlmError(`模型网络异常：${String(error)}`, 'network');
+      this.stat.network += 1;
+      /*
+       * undici 把真因藏在 cause 里，message 永远只是空泛的 "fetch failed"。
+       * 不取 cause 的话，日志里写「网络异常」等于什么都没写——
+       * 而 UND_ERR_CONNECT_TIMEOUT / ENOTFOUND / CERT_HAS_EXPIRED 的处理方式完全不同。
+       */
+      const cause = (error as { cause?: unknown }).cause;
+      const reason =
+        cause instanceof Error
+          ? ((cause as { code?: string }).code ?? cause.message)
+          : String(cause ?? error);
+      throw new LlmError(`模型网络异常：${reason}`, 'network');
     } finally {
       clearTimeout(timer);
     }
