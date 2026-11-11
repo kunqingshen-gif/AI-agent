@@ -130,7 +130,7 @@ export class AssistService {
       };
     });
     this.tools = new ToolsService(clock);
-    this.metricsSvc = new MetricsService(clock, telemetry);
+    this.metricsSvc = new MetricsService(this.store, clock, telemetry);
     this.guideSvc = new GuideService({
       store: this.store,
       llm,

@@ -6,7 +6,7 @@ import type { CollabTicket } from '../domain/collab';
 import { TASK_FLOWS, TASK_LIST, type TaskFlow } from '../domain/catalog';
 import { looksLikeQuestion, matchFaq } from '../domain/faq';
 import { sanitizeAnswer } from '../domain/guardrails';
-import { extractSlotsByRule, ruleIntent, topSuggestions } from '../domain/intent-rules';
+import { extractSlotsByRule, ruleIntent, topSuggestions, type RuleIntent } from '../domain/intent-rules';
 import { buildFlowFromPlan, type PlanValidation } from '../domain/plan';
 import { routeTool, type ToolPayload } from '../domain/tools';
 import {
@@ -22,7 +22,7 @@ import {
   toPlanDraft,
   type PromptSet,
 } from './prompts';
-import type { SessionStore } from './session-store';
+import type { SessionState, SessionStore } from './session-store';
 import type { ToolsService } from './tools-service';
 
 /**
@@ -130,137 +130,19 @@ export class InterpretService {
     const session = this.deps.store.require(sessionId);
     const ruleBased = ruleIntent(utterance);
 
-    /*
-     * ⓪-1 管家通道：这句话可能根本不是在「办某一件事」，而是在问
-     *      「我材料够不够」「最近有什么事」「这是不是骗子」「能不能叫人帮我」。
-     *
-     * 放在问答之前，是因为这四种问题问的都是「我的情况」，不是公共知识：
-     * 「我的材料还差什么」不该被答成一段通用的材料清单。
-     * 路由不中就安静地往下走，不抢原有链路。
-     */
-    const route = routeTool(utterance);
-    if (route) {
-      const built = this.buildTool(sessionId, route, utterance);
-      if (built) {
-        this.deps.onScreenChange?.(sessionId, session.screenId);
-        this.deps.telemetry.record({
-          type: 'tool.routed',
-          sessionId,
-          at: this.deps.clock.now(),
-          payload: { kind: route.kind, confidence: route.confidence, quote: route.quote, reason: route.reason },
-        });
-        return {
-          ok: true,
-          mode: 'tool',
-          intent: null,
-          suggestions: [],
-          message: built.message,
-          source: 'rule',
-          tool: built.payload,
-        };
-      }
-    }
+    /* 编排只做分流：管家 → 问答 → 已收录事项 → 现场规划，命中即返回 */
+    const toolResult = this.routeTools(sessionId, session, utterance);
+    if (toolResult) return toolResult;
 
-    /*
-     * ⓪ 问答通道优先：用户是在问知识，不是在要你动手。
-     *
-     * 这一条解决的是「问正常问题没回答」的硬伤。判定放在规则匹配之前是有意的：
-     * 「低保复核要带什么材料」也命中了低保复核的关键词，但用户要的是答案不是流程。
-     * 答完给出 relatedTaskId，想办的话一句话就能接着办，两条通道由此打通。
-     */
-    if (looksLikeQuestion(utterance)) {
-      const answer = await this.answerQuestion(sessionId, utterance);
-      if (answer) {
-        return {
-          ok: true,
-          mode: 'answer',
-          intent: null,
-          suggestions: answer.relatedTaskId ? [answer.relatedTaskId] : [],
-          message: answer.text,
-          source: answer.source,
-          answer,
-        };
-      }
-      /* 答不上来也不能拦着不让办事：继续往下走，按办事请求再判断一次 */
-    }
+    const answerResult = await this.answerIfQuestion(sessionId, utterance);
+    if (answerResult) return answerResult;
 
-    let intent: Intent | null = null;
-    let source: InterpretResult['source'] = 'none';
+    const recognized = await this.recognizeKnownTask(sessionId, utterance, ruleBased);
+    let intent: Intent | null = recognized?.intent ?? null;
     /** 已收录事项取 catalog；AI 规划的临时事项由规划结果携带 */
-    let flow: TaskFlow | null = null;
+    let flow: TaskFlow | null = recognized?.flow ?? null;
+    let source: InterpretResult['source'] = recognized?.source ?? 'none';
     let planned: InterpretResult['planned'];
-
-    /* ① 模型识别已收录事项：对口语归一、方言词、说错名字的处理比规则强 */
-    if (this.deps.llm.available) {
-      try {
-        const raw = await this.deps.llm.complete(
-          {
-            system: this.deps.prompts.intent,
-            user: [
-              `【事项清单】`,
-              ...TASK_LIST.map((t) => `- ${t.taskId}｜${t.title}｜触发词：${t.hotkey}`),
-              `【老人说的话】${utterance}`,
-            ].join('\n'),
-            temperature: 0.1,
-            maxTokens: 400,
-          },
-          sessionId,
-        );
-        const parsed = IntentOutputSchema.safeParse(extractJson(raw));
-        if (parsed.success && parsed.data.taskId !== 'unknown' && isKnownTask(parsed.data.taskId)) {
-          const known = TASK_FLOWS[parsed.data.taskId];
-          const slots: Partial<Record<SlotName, string>> = {
-            ...extractSlotsByRule(utterance),
-            ...this.pickSlots(parsed.data.slots ?? {}),
-          };
-          intent = {
-            taskId: parsed.data.taskId,
-            confidence: parsed.data.confidence,
-            slots,
-            missingSlots: [],
-            urgency: /急|马上|今天|截止|到期/.test(utterance) ? 'urgent' : 'normal',
-            restated: (parsed.data.restated ?? '').replace(/^您要办的是[:：]\s*/, '').trim() || known.title,
-            source: 'llm',
-            rawUtterance: utterance,
-          };
-          flow = known;
-          source = 'llm';
-        } else if (parsed.success && parsed.data.taskId === 'unknown') {
-          /*
-           * 解析成功但 taskId 是 unknown：模型看懂了，只是这件事确实不在清单里。
-           * 这不是降级——接下来第 ③ 步会请它现场排路径。
-           */
-          this.deps.telemetry.record({
-            type: 'intent.not-in-catalog',
-            sessionId,
-            at: this.deps.clock.now(),
-            payload: { utterance: utterance.slice(0, 60) },
-          });
-        } else {
-          this.deps.telemetry.record({
-            type: 'llm.fallback',
-            sessionId,
-            at: this.deps.clock.now(),
-            payload: { stage: 'intent', error: 'invalid-output' },
-          });
-        }
-      } catch (error) {
-        this.deps.telemetry.record({
-          type: 'llm.fallback',
-          sessionId,
-          at: this.deps.clock.now(),
-          payload: { stage: 'intent', error: String(error) },
-        });
-        this.deps.logger.warn({ sessionId, err: String(error) }, '意图理解降级到规则引擎');
-      }
-    }
-
-    /* ② 规则兜底：即使模型不可用，已收录的四件事件件能走 */
-    if (!intent && ruleBased) {
-      intent = ruleBased;
-      flow = TASK_FLOWS[ruleBased.taskId];
-      source = 'rule';
-    }
 
     /*
      * ③ 都没命中 → 让模型现场排路径。
@@ -308,11 +190,7 @@ export class InterpretService {
     });
     intent.missingSlots = [...needSlots].filter((slot) => !intent?.slots[slot]);
 
-    session.intent = intent;
-    session.flow = flow;
-    session.slots = { ...intent.slots };
-    session.completed = new Set<string>();
-    session.finished = false;
+    this.deps.store.setIntent(session, intent, flow);
 
     this.deps.telemetry.record({
       type: 'intent.parsed',
@@ -335,6 +213,147 @@ export class InterpretService {
       source,
       ...(planned ? { planned } : {}),
     };
+  }
+
+  /**
+   * ⓪-1 管家通道：这句话可能根本不是在「办某一件事」，而是在问
+   *      「我材料够不够」「最近有什么事」「这是不是骗子」「能不能叫人帮我」。
+   *
+   * 放在问答之前，是因为这四种问题问的都是「我的情况」，不是公共知识：
+   * 「我的材料还差什么」不该被答成一段通用的材料清单。
+   * 路由不中就安静地返回 null，不抢原有链路。
+   */
+  private routeTools(sessionId: string, session: SessionState, utterance: string): InterpretResult | null {
+    const route = routeTool(utterance);
+    if (!route) return null;
+    const built = this.buildTool(sessionId, route, utterance);
+    if (!built) return null;
+    this.deps.onScreenChange?.(sessionId, session.screenId);
+    this.deps.telemetry.record({
+      type: 'tool.routed',
+      sessionId,
+      at: this.deps.clock.now(),
+      payload: { kind: route.kind, confidence: route.confidence, quote: route.quote, reason: route.reason },
+    });
+    return {
+      ok: true,
+      mode: 'tool',
+      intent: null,
+      suggestions: [],
+      message: built.message,
+      source: 'rule',
+      tool: built.payload,
+    };
+  }
+
+  /**
+   * ⓪ 问答通道优先：用户是在问知识，不是在要你动手。
+   *
+   * 这一条解决的是「问正常问题没回答」的硬伤。判定放在规则匹配之前是有意的：
+   * 「低保复核要带什么材料」也命中了低保复核的关键词，但用户要的是答案不是流程。
+   * 答完给出 relatedTaskId，想办的话一句话就能接着办，两条通道由此打通。
+   *
+   * 返回 null 表示「不是问题，或者答不上来」——调用方继续走办事链路。
+   */
+  private async answerIfQuestion(sessionId: string, utterance: string): Promise<InterpretResult | null> {
+    if (!looksLikeQuestion(utterance)) return null;
+    const answer = await this.answerQuestion(sessionId, utterance);
+    if (!answer) return null;
+    return {
+      ok: true,
+      mode: 'answer',
+      intent: null,
+      suggestions: answer.relatedTaskId ? [answer.relatedTaskId] : [],
+      message: answer.text,
+      source: answer.source,
+      answer,
+    };
+  }
+
+  /**
+   * ①② 识别「已收录事项」。
+   *
+   * ① 先问模型：对口语归一、方言词、说错名字的处理比规则强；
+   * ② 再退规则：即使模型不可用，已收录的四件事件件能走。
+   * 两者都没命中返回 null，交给 ③ 现场规划。
+   */
+  private async recognizeKnownTask(
+    sessionId: string,
+    utterance: string,
+    ruleBased: RuleIntent | null,
+  ): Promise<{ intent: Intent; flow: TaskFlow; source: 'llm' | 'rule' } | null> {
+    if (this.deps.llm.available) {
+      try {
+        const raw = await this.deps.llm.complete(
+          {
+            system: this.deps.prompts.intent,
+            user: [
+              `【事项清单】`,
+              ...TASK_LIST.map((t) => `- ${t.taskId}｜${t.title}｜触发词：${t.hotkey}`),
+              `【老人说的话】${utterance}`,
+            ].join('\n'),
+            temperature: 0.1,
+            maxTokens: 400,
+          },
+          sessionId,
+        );
+        const parsed = IntentOutputSchema.safeParse(extractJson(raw));
+        if (parsed.success && parsed.data.taskId !== 'unknown' && isKnownTask(parsed.data.taskId)) {
+          const known = TASK_FLOWS[parsed.data.taskId];
+          const slots: Partial<Record<SlotName, string>> = {
+            ...extractSlotsByRule(utterance),
+            ...this.pickSlots(parsed.data.slots ?? {}),
+          };
+          return {
+            intent: {
+              taskId: parsed.data.taskId,
+              confidence: parsed.data.confidence,
+              slots,
+              missingSlots: [],
+              urgency: /急|马上|今天|截止|到期/.test(utterance) ? 'urgent' : 'normal',
+              restated: (parsed.data.restated ?? '').replace(/^您要办的是[:：]\s*/, '').trim() || known.title,
+              source: 'llm',
+              rawUtterance: utterance,
+            },
+            flow: known,
+            source: 'llm',
+          };
+        }
+        if (parsed.success && parsed.data.taskId === 'unknown') {
+          /*
+           * 解析成功但 taskId 是 unknown：模型看懂了，只是这件事确实不在清单里。
+           * 这不是降级——接下来第 ③ 步会请它现场排路径。
+           */
+          this.deps.telemetry.record({
+            type: 'intent.not-in-catalog',
+            sessionId,
+            at: this.deps.clock.now(),
+            payload: { utterance: utterance.slice(0, 60) },
+          });
+        } else {
+          this.deps.telemetry.record({
+            type: 'llm.fallback',
+            sessionId,
+            at: this.deps.clock.now(),
+            payload: { stage: 'intent', error: 'invalid-output' },
+          });
+        }
+      } catch (error) {
+        this.deps.telemetry.record({
+          type: 'llm.fallback',
+          sessionId,
+          at: this.deps.clock.now(),
+          payload: { stage: 'intent', error: String(error) },
+        });
+        this.deps.logger.warn({ sessionId, err: String(error) }, '意图理解降级到规则引擎');
+      }
+    }
+
+    /* ② 规则兜底 */
+    if (ruleBased) {
+      return { intent: ruleBased, flow: TASK_FLOWS[ruleBased.taskId], source: 'rule' };
+    }
+    return null;
   }
 
   /**
@@ -581,7 +600,7 @@ export class InterpretService {
       if (parsed.success) {
         const slots = this.pickSlots(parsed.data.slots);
         if (Object.keys(slots).length > 0) {
-          session.slots = { ...session.slots, ...slots };
+          this.deps.store.mergeSlots(session, slots);
           return { slots, confidence: parsed.data.confidence, source: 'llm' };
         }
       }

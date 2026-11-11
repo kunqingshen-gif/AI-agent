@@ -65,9 +65,8 @@ export class GuideService {
     const { store, clock, telemetry, llm, prompts, logger } = this.deps;
     const startedAt = clock.now();
     const session = store.require(sessionId);
-    session.lastSeenAt = startedAt;
-    session.screenId = req.screenId;
-    session.slots = { ...session.slots, ...(req.slots ?? {}) };
+    store.touch(session, startedAt, req.screenId);
+    store.mergeSlots(session, req.slots ?? {});
     /* 家人在另一头能看到老人现在停在哪一页——这是「陪办」最有用的那一眼 */
     this.deps.onScreenChange?.(sessionId, req.screenId);
 
@@ -91,7 +90,7 @@ export class GuideService {
         pending.targetControlId !== undefined &&
         req.tappedControlId === pending.targetControlId;
       if (advanced || typed || tapped) {
-        session.completed.add(pending.id);
+        store.markStep(session, pending.id);
       }
     }
     /* 推进后重新取当前节点：避免用到已完成的旧节点 */
@@ -107,10 +106,10 @@ export class GuideService {
       asksForHelp: req.asksForHelp,
     });
 
-    session.stepsGuided += 1;
-    if (rule.kind === 'back') session.wrongTurns += 1;
+    store.bumpMetric(session, 'stepsGuided');
+    if (rule.kind === 'back') store.bumpMetric(session, 'wrongTurns');
     if (rule.guardrail) {
-      session.guardrailsTriggered += 1;
+      store.bumpMetric(session, 'guardrailsTriggered');
       telemetry.record({
         type: 'guardrail.blocked',
         sessionId,
@@ -196,8 +195,7 @@ export class GuideService {
 
     /* 4. 收尾：完成判定 */
     const completed = rule.completed;
-    if (completed && !session.finished) {
-      session.finished = true;
+    if (completed && store.markFinished(session)) {
       telemetry.record({
         type: 'task.completed',
         sessionId,
@@ -207,9 +205,8 @@ export class GuideService {
     }
     /* 只读播报节点：播完即视为完成，保证下一次调用进入「已完成」态 */
     if (node?.kind === 'read' && req.screenId === node.screenId) {
-      session.completed.add(node.id);
-      if (!session.finished) {
-        session.finished = true;
+      store.markStep(session, node.id);
+      if (store.markFinished(session)) {
         telemetry.record({
           type: 'task.completed',
           sessionId,
@@ -279,7 +276,7 @@ export class GuideService {
     const title = flow?.title ?? '政务服务事项';
     const idTail = session.slots.idCard ? session.slots.idCard.slice(-4) : '****';
     const script = `您好，我是${session.profile.displayName}，今年${session.profile.age}岁，住在${session.profile.region}。我要办的是「${title}」，身份证后四位是 ${idTail}。我自己在手机上操作不了，能不能麻烦您指导一下，或者告诉我最近的窗口在哪里？`;
-    session.handoffs += 1;
+    this.deps.store.bumpMetric(session, 'handoffs');
     this.deps.telemetry.record({
       type: 'rescue.triggered',
       sessionId,

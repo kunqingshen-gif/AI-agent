@@ -1,6 +1,6 @@
 import type { FeedbackVerdict, SessionMetrics } from '@shared/types';
 import type { ClockPort, TelemetryPort } from '../ports';
-import type { SessionState } from './session-store';
+import type { SessionState, SessionStore } from './session-store';
 
 /**
  * 反馈与指标。
@@ -20,6 +20,7 @@ export class MetricsService {
   private readonly tally: Record<FeedbackVerdict, number> = { worked: 0, failed: 0, wrong: 0 };
 
   constructor(
+    private readonly store: SessionStore,
     private readonly clock: ClockPort,
     private readonly telemetry: TelemetryPort,
   ) {}
@@ -53,7 +54,7 @@ export class MetricsService {
     /* 改主意时先撤掉上一次的计数：分档统计只反映当前结论，不重复计人头 */
     if (session.feedback) this.tally[session.feedback] = Math.max(0, this.tally[session.feedback] - 1);
     this.tally[verdict] += 1;
-    session.feedback = verdict;
+    this.store.setFeedback(session, verdict);
     this.telemetry.record({
       type: 'feedback.given',
       sessionId: session.id,
