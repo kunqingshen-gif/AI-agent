@@ -8,6 +8,7 @@ import { DashScopeLlm, DisabledLlm } from '@infra/llm/dashscope';
 import { JsonlTelemetry } from '@infra/telemetry/jsonl';
 import { loadPromptSet } from '@infra/prompt-store';
 import { JsonProfileStore } from '@infra/profile-store';
+import { JsonSessionSnapshots } from '@infra/session-snapshots';
 import type { LlmPort } from '@core/ports';
 import { AssistService } from '@core/application/assist-service';
 import { buildApp } from './app';
@@ -63,9 +64,22 @@ async function main(): Promise<void> {
     logger,
   );
 
+  /*
+   * 会话快照：让「接着上次办」扛住进程重启。
+   *
+   * 与档案同样放在基础设施层，但目录分开：档案是长期的、要被反复读；
+   * 快照是短期的、只在同一个 sessionId 再出现时懒加载一个文件。
+   */
+  const snapshots = new JsonSessionSnapshots(
+    path.join(config.dataDir, 'sessions'),
+    config.sessionTtlHours,
+    logger,
+  );
+
   const service = new AssistService(llm, telemetry, { now: () => Date.now() }, logger, {
     prompts: loaded.prompts,
     profiles,
+    snapshots,
   });
   const app = await buildApp({ config, logger, service, telemetry });
 

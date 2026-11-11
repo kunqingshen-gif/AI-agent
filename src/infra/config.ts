@@ -30,6 +30,11 @@ const EnvSchema = z.object({
    * 太短等于每次都要重新问一遍，太长又会让三年前的信息冒充「了解这个人」。
    */
   PROFILE_TTL_DAYS: z.coerce.number().int().min(1).max(3650).default(180),
+  /**
+   * 会话快照有效期（小时）。
+   * 比档案短得多：它服务的是「刚才被打断，接着办」，一天前的进度已经没有意义。
+   */
+  SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(720).default(24),
 });
 
 export type AppConfig = {
@@ -50,6 +55,8 @@ export type AppConfig = {
   promptsFile: string;
   /** 长期档案有效期（天） */
   profileTtlDays: number;
+  /** 会话快照有效期（小时） */
+  sessionTtlHours: number;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -75,6 +82,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     dataDir: e.DATA_DIR,
     promptsFile: e.PROMPTS_FILE,
     profileTtlDays: e.PROFILE_TTL_DAYS,
+    sessionTtlHours: e.SESSION_TTL_HOURS,
   };
 }
 

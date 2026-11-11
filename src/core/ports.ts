@@ -3,7 +3,8 @@
  * 好处是模型厂商可替换、测试可注入假实现（见 tests/）。
  */
 
-import type { ProfileMemory } from '@shared/types';
+import type { FeedbackVerdict, Intent, ProfileMemory, ScreenId, SlotName, UserProfile } from '@shared/types';
+import type { TaskFlow } from './domain/catalog';
 
 export interface LlmRequest {
   system: string;
@@ -97,6 +98,51 @@ export interface ProfileStorePort {
   load(ownerId: string): StoredProfile | null;
   save(ownerId: string, memory: ProfileMemory): StoredProfile;
   forget(ownerId: string): boolean;
+}
+
+/* ────────────────────────── 会话快照 ────────────────────────── */
+
+/**
+ * 一次会话的落盘形态。
+ *
+ * 它是「短期记忆」的副本，只为让「接着上次办」扛住进程重启，不是长期档案：
+ * 因此带自己的有效期，过期就该消失，也不该被当成「了解这个人」的依据。
+ *
+ * 敏感值是唯一不在其中的东西：`slots.idCard` / `slots.phone` 落盘前会被剔除，
+ * 重启后需要用户当下重新输入。理由与档案白名单一致——这两类字段不落盘。
+ */
+export interface SessionSnapshot {
+  id: string;
+  profile: UserProfile;
+  intent: Intent | null;
+  flow: TaskFlow | null;
+  /** Set 序列化成数组 */
+  completed: string[];
+  slots: Partial<Record<SlotName, string>>;
+  screenId: ScreenId;
+  startedAt: number;
+  lastSeenAt: number;
+  stepsGuided: number;
+  wrongTurns: number;
+  guardrailsTriggered: number;
+  handoffs: number;
+  finished: boolean;
+  feedback?: FeedbackVerdict;
+  ownerId?: string;
+  profileSource?: 'stored' | 'session';
+}
+
+/**
+ * 会话快照的落盘端口。
+ *
+ * 不传实现就退化为纯内存（测试、无状态部署）：会话过期即忘，功能不受影响，
+ * 只是进程重启后接不回去。把它做成可插拔，是因为「要不要留」是部署决定。
+ */
+export interface SessionSnapshotPort {
+  /** 读不到、已过期、文件坏了，都返回 null——快照缺失只是「接不回去」，不是故障 */
+  load(sessionId: string): SessionSnapshot | null;
+  save(snapshot: SessionSnapshot): void;
+  remove(sessionId: string): void;
 }
 
 export interface TelemetryEvent {

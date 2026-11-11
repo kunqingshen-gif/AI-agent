@@ -12,7 +12,7 @@ import type {
   UserProfile,
 } from '@shared/types';
 import { SCREENS } from '@shared/screens';
-import type { LlmPort, LlmStats, ProfileStorePort, TelemetryPort, ClockPort } from '../ports';
+import type { LlmPort, LlmStats, ProfileStorePort, SessionSnapshotPort, TelemetryPort, ClockPort } from '../ports';
 import { TASK_LIST } from '../domain/catalog';
 import { decide } from '../domain/guide-engine';
 import type { PreflightResult } from '../domain/preflight';
@@ -77,6 +77,11 @@ export interface ServiceOptions {
    * 这样测试与无状态部署仍能跑，而记忆是可插拔的能力，不是必需品。
    */
   profiles?: ProfileStorePort;
+  /**
+   * 会话快照落盘。不传就是纯内存——
+   * 功能不变，只是进程重启后「接着上次办」接不回去。
+   */
+  snapshots?: SessionSnapshotPort;
 }
 
 
@@ -113,6 +118,7 @@ export class AssistService {
     this.store = new SessionStore(clock, telemetry, {
       ...(options.maxSessions === undefined ? {} : { maxSessions: options.maxSessions }),
       ...(options.profiles ? { profiles: options.profiles } : {}),
+      ...(options.snapshots ? { snapshots: options.snapshots } : {}),
       defaults: SIMULATED_PROFILE,
       onProfileChanged: () => this.guideSvc.clearCache(),
     });

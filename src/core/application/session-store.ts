@@ -8,7 +8,7 @@ import type {
   SlotName,
   UserProfile,
 } from '@shared/types';
-import type { ClockPort, ProfileStorePort, TelemetryPort } from '../ports';
+import type { ClockPort, ProfileStorePort, SessionSnapshot, SessionSnapshotPort, TelemetryPort } from '../ports';
 import type { TaskFlow } from '../domain/catalog';
 
 /**
@@ -50,6 +50,13 @@ export interface SessionStoreOptions {
   maxSessions?: number;
   /** 长期档案存储；不传就是「没有记忆」 */
   profiles?: ProfileStorePort;
+  /**
+   * 会话快照落盘；不传就是纯内存。
+   *
+   * 落盘不是为了长期记忆，而是为了「接着上次办」扛住进程重启：
+   * 老人办到一半、服务刚好重启，重新开始等于让他白办一遍。
+   */
+  snapshots?: SessionSnapshotPort;
   /** 会话里的默认档案（演示用的那位老人） */
   defaults: UserProfile;
   /** 档案改了之后，依赖档案的缓存必须作废 */
@@ -84,16 +91,35 @@ export class SessionStore {
   }
 
   get(id: string): SessionState | undefined {
-    return this.sessions.get(id);
+    return this.sessions.get(id) ?? this.restore(id);
+  }
+
+  /**
+   * 内存里没有 → 去盘上找。
+   *
+   * 懒加载：不扫描整个目录，只在这个 id 真的被访问时读一个文件。
+   * 进程重启后第一次刷新页面，走的就是这条路径。
+   */
+  private restore(id: string): SessionState | undefined {
+    const snapshot = this.options.snapshots?.load(id);
+    if (!snapshot || snapshot.id !== id) return undefined;
+    const session = fromSnapshot(snapshot);
+    this.remember(session);
+    return session;
   }
 
   /** 取不到就抛：路由层据此返回 404，而不是把 undefined 往下传 */
   require(id: string): SessionState {
-    const session = this.sessions.get(id);
+    const session = this.sessions.get(id) ?? this.restore(id);
     if (!session) throw new Error(`会话不存在或已过期：${id}`);
     /* 命中即刷新 LRU 顺序，保证还在用的会话不会被新会话挤掉 */
     this.remember(session);
     return session;
+  }
+
+  /** 状态每变一次就落一次盘：崩溃丢的只是最后一次写入，不是整段办理过程 */
+  private persist(session: SessionState): void {
+    this.options.snapshots?.save(toSnapshot(session));
   }
 
   create(profile?: Partial<UserProfile>, memory?: { ownerId?: string; stored?: ProfileMemory }): SessionState {
@@ -122,6 +148,7 @@ export class SessionStore {
       profileSource: memory?.stored ? 'stored' : 'session',
     };
     this.remember(session);
+    this.persist(session);
     this.telemetry.record({
       type: 'session.started',
       sessionId: session.id,
@@ -131,6 +158,65 @@ export class SessionStore {
     return session;
   }
 
+  /*
+   * ─────────────── 会话状态写入 ───────────────
+   *
+   * 状态字段的写入只允许走这里。读取方散在引导、意图、指标三块，
+   * 写入点若不集中，排查「这一步是谁改的」就得满仓库找 `session.xxx =`。
+   */
+
+  /** 记一次来访：刷新活跃时间与当前屏幕（刷新页面后据此复原） */
+  touch(session: SessionState, at: number, screenId: ScreenId): void {
+    session.lastSeenAt = at;
+    session.screenId = screenId;
+    this.persist(session);
+  }
+
+  /** 合并前端带回的槽位；后到的同名字段覆盖先到的 */
+  mergeSlots(session: SessionState, slots: Partial<Record<SlotName, string>>): void {
+    session.slots = { ...session.slots, ...slots };
+    this.persist(session);
+  }
+
+  /** 这一节点已走通 */
+  markStep(session: SessionState, nodeId: string): void {
+    session.completed.add(nodeId);
+    this.persist(session);
+  }
+
+  /** 确定这一单要办什么：换事项即重开进度 */
+  setIntent(session: SessionState, intent: Intent, flow: TaskFlow): void {
+    session.intent = intent;
+    session.flow = flow;
+    session.slots = { ...intent.slots };
+    session.completed = new Set<string>();
+    session.finished = false;
+    this.persist(session);
+  }
+
+  /** 办完；返回本次是否由未完成变为完成，调用方据此只记一次埋点 */
+  markFinished(session: SessionState): boolean {
+    if (session.finished) return false;
+    session.finished = true;
+    this.persist(session);
+    return true;
+  }
+
+  /** 计数器 +1：stepsGuided / wrongTurns / guardrailsTriggered / handoffs */
+  bumpMetric(
+    session: SessionState,
+    metric: 'stepsGuided' | 'wrongTurns' | 'guardrailsTriggered' | 'handoffs',
+  ): void {
+    session[metric] += 1;
+    this.persist(session);
+  }
+
+  /** 记最终反馈；同一会话只保留最后一次结论（用户改主意是允许的） */
+  setFeedback(session: SessionState, verdict: FeedbackVerdict): void {
+    session.feedback = verdict;
+    this.persist(session);
+  }
+
   /**
    * 老人能看到「你到底记了我什么」。
    *
@@ -138,7 +224,7 @@ export class SessionStore {
    * 答不上来，等于要求老人凭信任交出自己的画像。
    */
   profileView(sessionId: string): ProfileMemoryView | null {
-    const session = this.sessions.get(sessionId);
+    const session = this.get(sessionId);
     if (!session) return null;
     const memory = toMemory(session.profile);
     const stored = session.ownerId ? this.options.profiles?.load(session.ownerId) : null;
@@ -158,7 +244,7 @@ export class SessionStore {
     sessionId: string,
     patch: ProfileMemory,
   ): { view: ProfileMemoryView; message: string } | null {
-    const session = this.sessions.get(sessionId);
+    const session = this.get(sessionId);
     if (!session) return null;
 
     const before = session.profile.digitalLiteracy;
@@ -176,6 +262,7 @@ export class SessionStore {
 
     const stored = session.ownerId ? this.options.profiles?.save(session.ownerId, toMemory(session.profile)) : null;
     if (stored && session.ownerId) session.profileSource = 'stored';
+    this.persist(session);
 
     this.telemetry.record({
       type: 'profile.updated',
@@ -199,12 +286,13 @@ export class SessionStore {
 
   /** 忘掉我：删档案、断开关联，本次会话退回默认档案 */
   forgetMemory(sessionId: string): boolean {
-    const session = this.sessions.get(sessionId);
+    const session = this.get(sessionId);
     if (!session) return false;
     const removed = session.ownerId ? (this.options.profiles?.forget(session.ownerId) ?? false) : false;
     session.ownerId = undefined;
     session.profile = { ...this.options.defaults };
     session.profileSource = 'session';
+    this.persist(session);
     this.options.onProfileChanged?.();
     this.telemetry.record({
       type: 'profile.forgotten',
@@ -214,6 +302,58 @@ export class SessionStore {
     });
     return removed;
   }
+}
+
+/** 落盘前必须剔除的槽位：身份证号与手机号只该活在这一次办理的内存里 */
+const SENSITIVE_SLOTS: ReadonlyArray<SlotName> = ['idCard', 'phone'];
+
+function toSnapshot(session: SessionState): SessionSnapshot {
+  const slots: Partial<Record<SlotName, string>> = {};
+  for (const [key, value] of Object.entries(session.slots)) {
+    if (!value || SENSITIVE_SLOTS.includes(key as SlotName)) continue;
+    slots[key as SlotName] = value;
+  }
+  return {
+    id: session.id,
+    profile: session.profile,
+    intent: session.intent,
+    flow: session.flow,
+    completed: [...session.completed],
+    slots,
+    screenId: session.screenId,
+    startedAt: session.startedAt,
+    lastSeenAt: session.lastSeenAt,
+    stepsGuided: session.stepsGuided,
+    wrongTurns: session.wrongTurns,
+    guardrailsTriggered: session.guardrailsTriggered,
+    handoffs: session.handoffs,
+    finished: session.finished,
+    ...(session.feedback ? { feedback: session.feedback } : {}),
+    ...(session.ownerId ? { ownerId: session.ownerId } : {}),
+    ...(session.profileSource ? { profileSource: session.profileSource } : {}),
+  };
+}
+
+function fromSnapshot(snapshot: SessionSnapshot): SessionState {
+  return {
+    id: snapshot.id,
+    profile: snapshot.profile,
+    intent: snapshot.intent,
+    flow: snapshot.flow,
+    completed: new Set(snapshot.completed),
+    slots: snapshot.slots,
+    screenId: snapshot.screenId,
+    startedAt: snapshot.startedAt,
+    lastSeenAt: snapshot.lastSeenAt,
+    stepsGuided: snapshot.stepsGuided,
+    wrongTurns: snapshot.wrongTurns,
+    guardrailsTriggered: snapshot.guardrailsTriggered,
+    handoffs: snapshot.handoffs,
+    finished: snapshot.finished,
+    ...(snapshot.feedback ? { feedback: snapshot.feedback } : {}),
+    ...(snapshot.ownerId ? { ownerId: snapshot.ownerId } : {}),
+    ...(snapshot.profileSource ? { profileSource: snapshot.profileSource } : {}),
+  };
 }
 
 /** 档案 → 可展示、可持久化的白名单视图；身份证号/手机号/收入在设计上就进不来 */
