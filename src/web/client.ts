@@ -53,6 +53,21 @@ export interface MemoryUpdateResponse {
   profile: UserProfile;
 }
 
+/**
+ * 断点快照：刷新或意外中断后，拿它还原来那一页。
+ * resume 为 null 表示这次会话还没开始办任何事。
+ */
+export interface SessionStateResponse extends SessionResponse {
+  resume: {
+    taskId: TaskId;
+    taskTitle: string;
+    stepLabel: string;
+    index: number;
+    total: number;
+    finished: boolean;
+  } | null;
+}
+
 export interface InterpretResponse {
   ok: boolean;
   /** guide：要办事，进入逐屏引导；answer：在问知识；tool：进了管家的某项能力 */
@@ -90,6 +105,8 @@ export const api = {
     }),
   /** 我记着您什么 */
   profile: (sessionId: string) => request<ProfileMemoryView>(`/api/session/${sessionId}/profile`),
+  /** 断点续办：刷新后接回原来那一步 */
+  sessionState: (sessionId: string) => request<SessionStateResponse>(`/api/session/${sessionId}/state`),
   /** 改一项记忆，改完立刻影响后面的说法 */
   patchProfile: (sessionId: string, patch: ProfileMemory) =>
     request<MemoryUpdateResponse>(`/api/session/${sessionId}/profile`, {

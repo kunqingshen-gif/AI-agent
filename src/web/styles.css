@@ -890,6 +890,39 @@ input {
   color: var(--ink-3);
 }
 
+/* 断点续办：告诉老人「这是刚才那一页」，而不是让他怀疑自己点错了 */
+.resume-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 2px 0;
+  padding: 8px 11px;
+  border-radius: 10px;
+  background: #eef4fd;
+  border: 1px solid #cfe0f7;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.resume-badge {
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: var(--blue, #1a6bd6);
+  color: #fff;
+  font-size: 12px;
+}
+
+.resume-dismiss {
+  margin-left: auto;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 13px;
+  color: var(--blue, #1a6bd6);
+  cursor: pointer;
+}
+
 /* 语音归一：把「听成什么、记作什么」写明，别偷偷改用户的话 */
 .speech-fix-line {
   margin: 8px 2px 0;

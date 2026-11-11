@@ -202,6 +202,16 @@ export async function buildApp(deps: AppDeps) {
     };
   });
 
+  /* ── 断点续办：刷新后凭 sessionId 还原来那一页 ── */
+  app.get('/api/session/:id/state', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const snapshot = service.sessionSnapshot(id);
+    if (!snapshot) {
+      return reply.status(404).send({ error: 'SESSION_NOT_FOUND', message: '会话已过期，请重新开始' });
+    }
+    return snapshot;
+  });
+
   /* ── 长期档案：可查、可改、可忘 ── */
 
   app.get('/api/session/:id/profile', async (request, reply) => {

@@ -48,6 +48,31 @@ function deviceId(): string {
   }
 }
 
+/**
+ * 上次那个会话的编号。
+ *
+ * 存在本机是为了「刷新一下不会被当成新来的」：老人办到一半按了刷新、
+ * 手机锁屏后被系统回收页面，回来应该回到原来那一步，而不是从首页重说一遍。
+ * 会话本身在服务端，这里只留一把钥匙；服务端不认这把钥匙时自动退回首页。
+ */
+const SESSION_KEY = 'assist.session';
+
+function loadSessionId(): string {
+  try {
+    return window.localStorage.getItem(SESSION_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function saveSessionId(id: string): void {
+  try {
+    window.localStorage.setItem(SESSION_KEY, id);
+  } catch {
+    /* 隐私模式拿不到存储：退化成本次有效，不影响办事 */
+  }
+}
+
 /** 建立「表单控件 → 业务槽位」索引，用于把界面输入同步给 Agent */
 const FIELD_SLOT: Record<string, SlotName> = {};
 for (const screen of Object.values(SCREENS)) {
@@ -152,6 +177,8 @@ export function App() {
    * 静默纠错一旦改错，用户连「它听错了」都无从发现。
    */
   const [speechFixes, setSpeechFixes] = useState<SpeechFix[]>([]);
+  /** 非空表示这次是「接着上次办」进来的，值是上次停在哪一步 */
+  const [resumeNotice, setResumeNotice] = useState<{ title: string; stepLabel: string } | null>(null);
 
   const valuesRef = useRef<Record<string, string>>({});
   const attemptsRef = useRef(0);
@@ -201,6 +228,66 @@ export function App() {
     [speakOn],
   );
 
+  /**
+   * 刷新后的复原：只做一次。
+   *
+   * 为什么不让用户自己说「继续」：他很可能不知道刚才停在哪儿，
+   * 而服务端一直记着。前端只需要把钥匙带回来，剩下的是把它摆回屏幕上。
+   * 会话不在（服务重启、被淘汰）时静默退回首页——报错只会让老人以为是自己弄坏了。
+   */
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    /*
+     * 只在「刷新 / 后退回来」时复原。
+     *
+     * 用 Navigation Timing 的 type 判断，而不是随便一次加载都恢复：
+     *  - reload / back_forward：页面是被重建的，老人什么都没做，应该回到原处；
+     *  - navigate：新开一页、从别处点进来，视为重新开始，不继承上一位的办理进度。
+     * 这样验收脚本与全新访客都不会被上一条会话带着走。
+     */
+    const navEntry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+    const navType = navEntry?.type;
+    if (navType !== 'reload' && navType !== 'back_forward') return;
+    const saved = loadSessionId();
+    if (!saved) return;
+    let alive = true;
+    void (async () => {
+      try {
+        const state = await api.sessionState(saved);
+        if (!alive) return;
+        setSession({
+          sessionId: state.sessionId,
+          profile: state.profile,
+          screenId: state.screenId,
+          tasks: state.tasks,
+          memory: state.memory,
+        });
+        setMemory(state.memory ?? null);
+        if (!state.resume || state.resume.finished) return;
+        setIntent({
+          taskId: state.resume.taskId,
+          confidence: 1,
+          slots: {},
+          missingSlots: [],
+          urgency: 'normal',
+          restated: state.resume.taskTitle,
+          source: 'rule',
+          rawUtterance: '',
+        });
+        setScreenId(state.screenId);
+        setResumeNotice({ title: state.resume.taskTitle, stepLabel: state.resume.stepLabel });
+        await guideWith(saved, state.screenId, 0);
+      } catch {
+        /* 会话不在了：静默从首页开始，不把技术错误甩给老人 */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [guideWith]);
+
   const say = useCallback(
     async (text: string) => {
       const utterance = text.trim();
@@ -227,6 +314,7 @@ export function App() {
           const created = await api.createSession({ hearingImpaired: !speakOn }, deviceId());
           setSession(created);
           setMemory(created.memory ?? null);
+          saveSessionId(created.sessionId);
           sid = created.sessionId;
         }
         const result = await api.interpret(sid, heard);
@@ -290,6 +378,7 @@ export function App() {
             const created = await api.createSession({ hearingImpaired: !speakOn }, deviceId());
             setSession(created);
             setMemory(created.memory ?? null);
+            saveSessionId(created.sessionId);
             sid = created.sessionId;
           }
           const ticket = await api.collabOpen(sid);
@@ -827,6 +916,15 @@ export function App() {
                 我听成「{speechFixes.map((fix) => fix.from).join('」「')}」，按
                 {speechFixes.some((fix) => fix.via === 'screen') ? '这一页的写法' : '您的常用说法'}记作
                 「{speechFixes.map((fix) => fix.to).join('」「')}」
+              </p>
+            )}
+            {resumeNotice && (
+              <p className="resume-line">
+                <span className="resume-badge">接着上次办</span>
+                {resumeNotice.title} · {resumeNotice.stepLabel}
+                <button type="button" className="resume-dismiss" onClick={() => setResumeNotice(null)}>
+                  知道了
+                </button>
               </p>
             )}
             {intent && (

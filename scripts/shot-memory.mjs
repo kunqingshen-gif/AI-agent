@@ -167,6 +167,12 @@ async function main() {
   if (rect2) await shot('51-memory-changed', rect2);
 
   console.log('\n== 刷新再回来（这一步才叫记忆） ==');
+  /*
+   * 刷新前清掉「办到哪一步」那把钥匙：
+   * 这里要验的是「档案还记得」，不是「断点续办」，清掉才回得到起手页。
+   * deviceId 不动，所以档案仍然读得回来。
+   */
+  await evaluate(`localStorage.removeItem('assist.session')`);
   await send('Page.reload', { ignoreCache: true });
   await sleep(2500);
   await waitFor('.welcome-task');

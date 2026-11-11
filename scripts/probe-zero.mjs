@@ -231,6 +231,11 @@ async function main() {
 
   /* ── 4. 说不清 → 改问「是不是这一件」 ── */
   console.log('\n== 说不清时的降级 ==');
+  /*
+   * 这一段要模拟「重新开始的一位老人」：断点续办会让普通刷新接着上次办，
+   * 所以这里显式清掉本机存档，再导航回首页。
+   */
+  await evaluate(`(() => { localStorage.removeItem('assist.session'); sessionStorage.removeItem('assist.booted'); })()`);
   await send('Page.navigate', { url: BASE });
   await sleep(2200);
   await clickByText('按这里说话', '.welcome-mic');
