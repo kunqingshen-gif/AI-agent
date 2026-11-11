@@ -11,6 +11,16 @@ Thumbs.db
 # 一键复现生成的报告（含 base64 截图，每次内容不同，不入库）
 demo-report.html
 
+# 探针截图与临时产物（每次运行都会变，不入库）
+.screenshots/
+
+# 交付物与打包产物：生成一次就够，靠脚本复现，不入库
+.trae-html-share-packages/
+docs/video-*.html
+docs/video-*.pdf
+docs/assets/qr-online.png
+scripts/pack-*.py
+
 # 部署用的干净副本（不含 .env，不纳入版本库）
 deploy/
 
