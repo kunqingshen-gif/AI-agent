@@ -62,10 +62,13 @@ npm run build && npm start
 ```bash
 npm run lint        # ESLint（含 no-explicit-any、类型导入一致性）
 npm run typecheck   # 前后端两套 tsconfig，strict + noUncheckedIndexedAccess
-npm run test        # Vitest：220 项，覆盖护栏、规则引擎、契约、编排、AI 规划校验、相关性拒排、提问识别与问答过滤、屏幕与导航一致性、引导链路首尾相接、起手页常办事项、熔断降级、限流、无障碍、内存上限、埋点轮转、用量统计、长期档案与提示词处置
+npm run test        # Vitest：240 项，覆盖护栏、规则引擎、契约、编排、AI 规划校验、相关性拒排、提问识别与问答过滤、屏幕与导航一致性、引导链路首尾相接、起手页常办事项、语音归一（方言/同音/同义）、协办码时效与次数、断点续办、熔断降级、限流、无障碍、内存上限、埋点轮转、用量统计、长期档案与提示词处置
 npm run smoke       # 端到端：意图→引导→纠偏→护栏→救援→完成（需先启动服务）
 node scripts/capture.mjs  # 用无头浏览器走完流程并逐屏出图
 node scripts/probe-zero.mjs    # 零学习三件套的真实点击验证（含「下一步」连按、语音失败降级）
+node scripts/probe-guardian.mjs # 管家四项能力：办前体检、生命周期、可疑话术、一句话直达、协办码
+node scripts/probe-multimodal.mjs # 多模态：方言/同音归一、视觉可达性（目标必须在可视区）
+node scripts/probe-resume.mjs  # 断点续办：办到一半刷新，回来还在那一步；会话失效则静默回首页
 node scripts/shot-memory.mjs   # 长期档案：记住 → 刷新再认 → 忘掉（跨会话验证，不认三步之外的答案）
 npm run launch -- --check # 启动器自检：环境、构建产物新鲜度、端口占用，不启动服务
 ```
@@ -85,13 +88,20 @@ src/
 │  └─ screens.ts      37 个屏幕的可读模型（UI 渲染与 Agent 读屏共用）
 ├─ core/              领域与应用层（不依赖任何框架）
 │  ├─ domain/
-│  │  ├─ catalog.ts        4 个事项的业务事实 + 确定性流程图
+│  │  ├─ catalog.ts        事项库载入与校验（数据在 task-catalog.json）
+│  │  ├─ task-catalog.json 4 个事项的业务事实 + 确定性流程图（改材料只改这里）
 │  │  ├─ guide-engine.ts   决策：此刻该让用户点哪儿
 │  │  ├─ plan.ts           AI 规划校验：屏幕契约 + 语义相关 + 护栏只增不减
 │  │  ├─ guardrails.ts     护栏：什么绝对不能代做
 │  │  └─ intent-rules.ts   降级意图识别 + 中文数字解析
 │  ├─ application/
-│  │  ├─ assist-service.ts 编排：理解 → 规划 → 引导 → 救援
+│  │  ├─ assist-service.ts 编排门面：把请求交给下面几块，自己不掺业务判断
+│  │  ├─ interpret-service.ts 意图与规划：办事/问答/管家路由、现场规划
+│  │  ├─ guide-service.ts   引导与救援：决策、措辞、求助话术
+│  │  ├─ session-store.ts   会话与长期档案：LRU、可改可忘、断点快照
+│  │  ├─ collab-service.ts  协办码：时效、次数、只读边界
+│  │  ├─ tools-service.ts   办前体检 / 守护日历 / 可疑话术
+│  │  ├─ metrics-service.ts 反馈分档与指标
 │  │  └─ prompts.ts        提示词 + zod 输出校验
 │  └─ ports.ts             端口定义（LLM / 埋点 / 时钟）
 ├─ infra/             实现层：DashScope 适配、JSONL 埋点、日志脱敏、配置校验
