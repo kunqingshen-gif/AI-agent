@@ -616,14 +616,24 @@ export function App() {
    */
   const quickTasks = useMemo<QuickTask[]>(() => quickTasksFrom(scan), [scan]);
 
-  /** 求助话术：带着上下文去求助，老人在电话里不用从头解释 */
+  /**
+   * 求助话术：带着上下文去求助，老人在电话里不用从头解释。
+   *
+   * 年龄与居住情况必须取自本次会话的档案，不能写死。
+   * 早前这里硬编码「我今年 78 岁，一个人住」，而默认档案是 68 岁——
+   * 老人照着念给 12345，对面按 78 岁查政策，问出来的结果是对不上的。
+   * 求助话术是产品的最后一道兜底，它说错自己的年龄，比说不出话更尴尬。
+   * 没有会话时不编造个人信息，只说卡在哪一页。
+   */
   const helpScript = useMemo(() => {
+    const profile = session?.profile;
+    const who = profile ? `我今年${profile.age}岁，${profile.livingAlone ? '一个人住' : '和家人一起住'}。` : '';
     const what = intent?.restated;
     if (!what) {
-      return `我今年 78 岁，一个人住。我在手机上办事，找不到要办的那个入口，现在停在「${screen.title}」这一页，能不能麻烦您带带我。`;
+      return `${who}我在手机上办事，找不到要办的那个入口，现在停在「${screen.title}」这一页，能不能麻烦您带带我。`;
     }
-    return `我今年 78 岁，一个人住。我在手机上办「${what}」，卡在「${screen.title}」这一页，不知道该点哪里，麻烦您帮我看看。`;
-  }, [intent, screen]);
+    return `${who}我在手机上办「${what}」，卡在「${screen.title}」这一页，不知道该点哪里，麻烦您帮我看看。`;
+  }, [intent, screen, session]);
 
   /* 模型通道徽标：必须反映真实健康状态，不能只报「配了密钥」 */
   const llmBadge = useMemo(() => {

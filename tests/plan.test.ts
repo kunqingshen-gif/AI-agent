@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AssistService } from '@core/application/assist-service';
 import { PLAN_SYSTEM_PROMPT } from '@core/application/prompts';
-import { buildFlowFromPlan, inferGuardrail, interactiveControlsOf, isRelatedScreen, type PlanDraft } from '@core/domain/plan';
+import { buildFlowFromPlan, inferGuardrail, interactiveControlsOf, isRelatedScreen, isBiometricScreen, type PlanDraft } from '@core/domain/plan';
 import type { LlmPort, LlmRequest } from '@core/ports';
 import { InMemoryTelemetry } from '@infra/telemetry/jsonl';
 import type { Logger } from '@infra/logger';
@@ -195,6 +195,42 @@ describe('计划验证器：语义相关性', () => {
     const full = buildFlowFromPlan({ ...ELDER_PLAN, coverage: 'full' }, '我要办高龄津贴');
     expect(full.droppedSteps).toBe(0);
     expect(full.coverage).toBe('full');
+  });
+});
+
+describe('计划验证器：说法归一', () => {
+  it('老人说「老年津贴」「养老补贴」，也能走上高龄津贴的屏', () => {
+    expect(isRelatedScreen('mine.elder', '老年津贴申请')).toBe(true);
+    expect(isRelatedScreen('mine.elder', '养老补贴')).toBe(true);
+    expect(isRelatedScreen('mine.elder', '高龄津贴')).toBe(true);
+  });
+
+  it('归一不等于放水：老年津贴仍进不了低保复核的表单', () => {
+    expect(isRelatedScreen('civil.allowance.form', '老年津贴申请')).toBe(false);
+    expect(isRelatedScreen('civil.allowance.intro', '养老补贴')).toBe(false);
+  });
+});
+
+describe('计划验证器：护栏不依赖屏幕 id 命名', () => {
+  it('按屏幕上写着什么来判断是不是生物核验页', () => {
+    expect(isBiometricScreen('civil.allowance.face')).toBe(true);
+    expect(isBiometricScreen('pension.qualify.face')).toBe(true);
+  });
+
+  it('风控确认页、普通页面不会被误判成生物核验', () => {
+    expect(isBiometricScreen('civil.allowance.risk')).toBe(false);
+    expect(isBiometricScreen('gov.home')).toBe(false);
+    expect(isBiometricScreen('civil.allowance.form')).toBe(false);
+  });
+
+  it('核验页上即使步骤文案很普通，也强制降级为本人确认', () => {
+    /* 文案里没有人脸/核验字样，靠的只能是「这块屏幕本身是核验页」 */
+    expect(
+      inferGuardrail(
+        { screenId: 'civil.allowance.face', targetControlId: 'face.btn.start', action: 'tap', goal: '继续', instruction: '点右下角' },
+        'civil.allowance.face',
+      ),
+    ).toBe('biometric');
   });
 });
 

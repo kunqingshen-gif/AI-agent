@@ -46,16 +46,30 @@ export interface LifeScan {
   summary: string;
 }
 
+interface LifeSeed extends Omit<LifeItem, 'dueAt'> {
+  /** 距今天还有几天。到期日由它现算，不写死年月日 */
+  dueInDays: number;
+}
+
 /**
  * 演示数据：一位 78 岁独居低保老人真实会遇到的五件事。
- * 日期围绕「今天」设置，但写死而不是动态生成——动态生成会让测试失去锚点，
- * 且演示时截图与文档对不上。
+ *
+ * 日期用「相对今天还有几天」定义，而不是写死某年某月某日。
+ *
+ * 早前是写死的：`utility.nov` 记成 2026-11-05。到了 2026-11-10，
+ * 同一份数据就从「还有 6 天 · 这周内办」变成「已经过了 5 天 · 马上补办」，
+ * demo:check 的零学习成本探针与管家探针同时变红——产品没坏，是演示数据烂了。
+ * 演示数据会随日历腐烂，这是最不该发生在演示项目上的事故：
+ * 评委哪天来，就得看哪天运气。
+ *
+ * 改成相对日期后，紧迫度组合恒定（1 件逾期边缘的急事 + 2 件本月内 + 2 件远期），
+ * 既保住了「最急的排第一」这个卖点，也不会因为跨月跨年而失真。
  */
-export const LIFE_ITEMS: LifeItem[] = [
+const LIFE_SEEDS: readonly LifeSeed[] = [
   {
     id: 'utility.nov',
     title: '本月水费',
-    dueAt: '2026-11-05',
+    dueInDays: 6,
     kind: 'bill',
     consequence: '逾期会产生滞纳金，超过 30 天可能停水。',
     relatedTaskId: 'utility.pay',
@@ -64,7 +78,7 @@ export const LIFE_ITEMS: LifeItem[] = [
   {
     id: 'dibao.doc',
     title: '低保证明到期',
-    dueAt: '2026-11-20',
+    dueInDays: 21,
     kind: 'deadline',
     consequence: '证明失效后，低保复核无法提交，当月救助金会延后发放。',
     targetScreenId: 'mine.doc.dibao',
@@ -72,7 +86,7 @@ export const LIFE_ITEMS: LifeItem[] = [
   {
     id: 'dibao.renew',
     title: '低保资格复核',
-    dueAt: '2026-11-30',
+    dueInDays: 31,
     kind: 'review',
     consequence: '半年一次，逾期未复核将暂停低保待遇。',
     relatedTaskId: 'allowance.renew',
@@ -81,7 +95,7 @@ export const LIFE_ITEMS: LifeItem[] = [
   {
     id: 'pension.qualify',
     title: '养老金领取资格认证',
-    dueAt: '2027-03-31',
+    dueInDays: 152,
     kind: 'annual',
     consequence: '每年一次，逾期未认证会暂停发放养老金。',
     relatedTaskId: 'pension.qualify',
@@ -90,7 +104,7 @@ export const LIFE_ITEMS: LifeItem[] = [
   {
     id: 'medical.filing',
     title: '异地就医备案到期',
-    dueAt: '2027-04-18',
+    dueInDays: 170,
     kind: 'deadline',
     consequence: '到期后在外地住院需先垫全款，再回参保地报销。',
     relatedTaskId: 'medical.filing',
@@ -99,6 +113,28 @@ export const LIFE_ITEMS: LifeItem[] = [
 ];
 
 const DAY_MS = 86_400_000;
+
+/** 从「今天」往后推 N 天，返回不带时区的 ISO 日期（YYYY-MM-DD） */
+function isoDateAfter(now: Date, offsetDays: number): string {
+  const d = new Date(startOfDay(now) + offsetDays * DAY_MS);
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${month}-${day}`;
+}
+
+/**
+ * 以某一时刻为「今天」生成演示数据。
+ *
+ * 服务端每次扫描都用它，所以截图、探针与话术永远对得上当天。
+ * 用户传进来的 2026-10-30 是这份数据的撰写日，也是测试的固定锚点：
+ * 拿测试里的 NOW 调它，得到的仍是当年那五个日期，断言一个字都不用改。
+ */
+export function lifeItemsAt(now: Date = new Date()): LifeItem[] {
+  return LIFE_SEEDS.map(({ dueInDays, ...item }) => ({ ...item, dueAt: isoDateAfter(now, dueInDays) }));
+}
+
+/** 锚定 2026-10-30 的快照，供测试与文档引用 */
+export const LIFE_ITEMS: LifeItem[] = lifeItemsAt(new Date(2026, 9, 30));
 
 function startOfDay(date: Date): number {
   return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());

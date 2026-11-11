@@ -91,6 +91,27 @@ const BIO_RE = /人脸|刷脸|核验|眨眼|张嘴|摄像头|照一下/;
 const ID_RE = /身份证|银行卡|证件号|卡号/;
 
 /**
+ * 这块屏幕本身是不是生物核验页——看屏幕上写着什么，不看 id 怎么命名。
+ *
+ * 早前的判据是 `screenId.endsWith('.face')`。那是一条隐形的命名契约：
+ * 只要有人把屏幕 id 从 `civil.allowance.face` 改成 `civil.allowance.verify`，
+ * 护栏就静默失效，而且没有任何测试会红——这是护栏最不能接受的失效方式。
+ * 现在改成读屏幕标题与正文标题，改 id 不再影响判定。
+ *
+ * 刻意不读 semantics 与控件 hint：办前说明页爱写「提交后进入实名核验」，
+ * 若一并扫描，整个表单都会被打成生物核验，护栏从「拦住风险」退化成「什么都拦」。
+ */
+export function isBiometricScreen(screenId: ScreenId): boolean {
+  if (!(screenId in SCREENS)) return false;
+  const screen = SCREENS[screenId];
+  const headings = screen.blocks.flatMap((block) => {
+    if (block.type === 'text' || block.type === 'dialog') return [block.title];
+    return [];
+  });
+  return BIO_RE.test([screen.title, ...headings].join(' '));
+}
+
+/**
  * 风险推断：只看「这一步要干什么」和「它要点的那个控件的性质」，不看模型怎么说。
  * 顺序即优先级，先命中先返回 —— 人脸优先于付款，付款优先于验证码。
  */
@@ -101,7 +122,7 @@ export function inferGuardrail(step: PlanStepDraft, screenId: ScreenId): Guardra
   const controlText = `${control?.label ?? ''} ${control?.hint ?? ''}`;
   const risky = control?.risky === true;
 
-  if (screenId.endsWith('.face') || BIO_RE.test(text) || (risky && BIO_RE.test(controlText))) return 'biometric';
+  if (isBiometricScreen(screenId) || BIO_RE.test(text) || (risky && BIO_RE.test(controlText))) return 'biometric';
   if (PAY_RE.test(text) || (risky && PAY_RE.test(controlText))) return 'payment';
   if (CAPTCHA_RE.test(text)) return 'captcha';
   if (risky && /本人|确认|安全/.test(controlText)) return 'identity';
@@ -132,6 +153,71 @@ const STOP_GRAMS: ReadonlySet<string> = new Set([
   '申请', '办理', '服务', '查询', '信息', '填写', '提交', '确认', '开始', '进行', '需要', '相关',
 ]);
 
+/**
+ * 同一件事的多种说法。
+ *
+ * 老人说的是「老年津贴」「养老补贴」，屏幕上印的是「高龄津贴」——二者是一件事，
+ * 但二字重叠一个也对不上（养老补贴 → 养老/老补/补贴，高龄津贴 → 高龄/龄津/津贴），
+ * 于是模型排出的正确步骤被语义闸门当成「领错门」截断，用户听到的是「后面我没见过」。
+ * 这是护栏误伤：为了不走错，把本来走对的路也封了。
+ *
+ * 解决办法不是放宽闸门，而是先把说法归一：先认「这是哪个概念」，再比概念，
+ * 概念对不上才退回二字重叠。这样「老年津贴」能进高龄津贴的屏，
+ * 而「高龄津贴」仍然进不去低保复核的表单——该拦的照拦。
+ */
+interface Concept {
+  id: string;
+  /** 归一后替换成的标准词，也用于二字回退时对齐用词 */
+  canonical: string;
+  words: readonly string[];
+}
+
+const CONCEPTS: readonly Concept[] = [
+  {
+    id: 'senior-allowance',
+    canonical: '高龄津贴',
+    words: ['高龄津贴', '高龄老人津贴', '老年津贴', '高龄补贴', '老年补贴', '高龄补助', '老人津贴', '高领津贴', '高令津贴', '养老补贴', '老人补贴'],
+  },
+  {
+    id: 'dibao',
+    canonical: '低保',
+    words: ['低保', '最低生活保障', '低保金', '救助金', '困难补助'],
+  },
+  {
+    id: 'pension',
+    canonical: '养老金',
+    /* 养老补贴既可能是高龄津贴，也可能被老人用来指养老金，两边都算，谁先对上算谁 */
+    words: ['养老金', '退休金', '养老待遇', '养老补贴', '社保认证', '养老认证', '领取资格认证'],
+  },
+  {
+    id: 'medical',
+    canonical: '异地就医',
+    words: ['异地就医', '异地备案', '外地看病', '转诊备案', '异地报销'],
+  },
+  {
+    id: 'utility',
+    canonical: '生活缴费',
+    words: ['水费', '电费', '燃气费', '燃气', '生活缴费', '缴费', '交费', '欠费', '账单'],
+  },
+];
+
+function conceptsIn(text: string): Set<string> {
+  const found = new Set<string>();
+  for (const concept of CONCEPTS) {
+    if (concept.words.some((word) => text.includes(word))) found.add(concept.id);
+  }
+  return found;
+}
+
+/** 把各种叫法替换成标准词，供二字回退使用 */
+function canonicalize(text: string): string {
+  let out = text;
+  for (const concept of CONCEPTS) {
+    for (const word of concept.words) out = out.split(word).join(concept.canonical);
+  }
+  return out;
+}
+
 function bigrams(text: string): Set<string> {
   const clean = text.replace(/[^\u4e00-\u9fa5A-Za-z0-9]/g, '');
   const set = new Set<string>();
@@ -149,16 +235,30 @@ function bigrams(text: string): Set<string> {
  * 可它是低保复核的表。模型把办高龄津贴的人领进去，控件全对、业务全错——这种错
  * 比指错按钮更伤信任，因为用户会照着把信息填进别人的事项里。
  *
- * 判据用二字的字符重叠：标题或控件标签里若出现事项名的任何一个二字片段，才算相关。
- * 粗糙，但方向正确：**宁可不走，不可走错**。
+ * 判据分两层：
+ *   ① 概念层：两边都认得出概念时，比概念是否相交。「高龄津贴」与「低保复核」
+ *      各有所属概念，直接判不相关，不会因为共享「对象」「复核」这种字眼放行；
+ *   ② 二字回退：有一边认不出概念（例如表单页只写「填写复核信息」），
+ *      才退回归一后的二字重叠——粗糙，但方向正确：**宁可不走，不可走错**。
  */
 export function isRelatedScreen(screenId: ScreenId, taskTitle: string): boolean {
   if (GENERIC_SCREENS.has(screenId)) return true;
   if (!(screenId in SCREENS)) return false;
   const screen = SCREENS[screenId];
   const labels = [...interactiveControlsOf(screenId).values()].map((control) => control.label);
-  const visible = bigrams([screen.title, ...labels].join(' '));
-  for (const gram of bigrams(taskTitle)) {
+  const screenText = [screen.title, ...labels].join(' ');
+
+  const taskConcepts = conceptsIn(taskTitle);
+  const screenConcepts = conceptsIn(screenText);
+  if (taskConcepts.size > 0 && screenConcepts.size > 0) {
+    for (const concept of taskConcepts) {
+      if (screenConcepts.has(concept)) return true;
+    }
+    return false;
+  }
+
+  const visible = bigrams(canonicalize(screenText));
+  for (const gram of bigrams(canonicalize(taskTitle))) {
     if (visible.has(gram)) return true;
   }
   return false;
