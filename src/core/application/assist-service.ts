@@ -273,9 +273,9 @@ export class AssistService {
   /* ─────────────── 管家能力：四种，和办事引导并列 ─────────────── */
 
   /**
-   * 办前体检。
+   * 办前体检：按指定事项出清单，未指定则按低保复核演示。
    *
-   * 不传事项时用会话里正在办的那一件；没有会话就按低保复核演示。
+   * 会话里正在办哪一件，由意图模块在 `InterpretService.buildTool` 里读取并传进来；
    * 这里刻意不做「智能猜事项」——猜错事项的体检比不做更糟，
    * 它会让人拿着一份不相干的清单去补材料。
    */
@@ -310,11 +310,6 @@ export class AssistService {
     return this.collab.close(code);
   }
 
-  /** 家人看到的「他现在在哪一页」由引导流程顺带更新，不需要额外调用 */
-  private syncCollabScreen(sessionId: string, screenId: ScreenId): void {
-    this.collab.syncScreen(sessionId, screenId);
-  }
-
   /** 意图与规划已独立成 InterpretService，这里只做转发（保持对外方法名不变） */
   async interpret(sessionId: string, utterance: string): Promise<InterpretResult> {
     return this.interpretSvc.interpret(sessionId, utterance);
@@ -334,11 +329,6 @@ export class AssistService {
   async guide(sessionId: string, req: AssistRequest): Promise<GuideAction> {
     return this.guideSvc.guide(sessionId, req);
   }
-
-
-  /* ─────────────── 口语填表 ─────────────── */
-
-  /* ─────────────── 救援 ─────────────── */
 
   hotlineScript(sessionId: string): { script: string; hotline: string } {
     return this.guideSvc.hotlineScript(sessionId);

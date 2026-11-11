@@ -201,7 +201,7 @@
 | `src/web/styles.css` | 校正条与翻屏标注样式 | 截图 |
 | `scripts/probe-multimodal.mjs` | 新增：多模态三条真实验证 | 本文件 |
 | `scripts/demo-check.mjs` | 一条命令里纳入多模态探针（现为六个探针） | `npm run demo:check` 结论全部通过 |
-| `tests/plan.test.ts` / `tests/speech-fix.test.ts` | 新增用例 | `npm run test` 233 项全过 |
+| `tests/plan.test.ts` / `tests/speech-fix.test.ts` | 新增用例 | `npm run test` 240 项全过 |
 
 ---
 
