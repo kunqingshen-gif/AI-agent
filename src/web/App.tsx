@@ -19,6 +19,7 @@ import type { ToolPayload } from '@core/domain/tools';
 import type { CollabTicket } from '@core/domain/collab';
 import type { LifeEntry, LifeScan } from '@core/domain/lifecycle';
 import { getRecognition, speak, stopSpeaking } from './useSpeech';
+import { normalizeUtterance, screenVocabulary, speechLangOf, type SpeechFix } from './speech-fix';
 import { PhoneFrame } from './components/PhoneFrame';
 import { ScreenView } from './components/ScreenView';
 import { GuideCard } from './components/GuideCard';
@@ -144,6 +145,13 @@ export function App() {
   const [scan, setScan] = useState<LifeScan | null>(null);
   /** 说不清时的替代方案：不开口，点一件就行 */
   const [askOpen, setAskOpen] = useState(false);
+  /**
+   * 这一句被校正过什么：拼音听错、方言词、老人自己的叫法。
+   *
+   * 必须显示出来，而不是悄悄改掉：老人有权知道机器把它的话理解成了什么。
+   * 静默纠错一旦改错，用户连「它听错了」都无从发现。
+   */
+  const [speechFixes, setSpeechFixes] = useState<SpeechFix[]>([]);
 
   const valuesRef = useRef<Record<string, string>>({});
   const attemptsRef = useRef(0);
@@ -197,8 +205,21 @@ export function App() {
     async (text: string) => {
       const utterance = text.trim();
       if (!utterance) return;
+      /*
+       * 听错、方言、老人自己的叫法，都在这里先修一遍。
+       *
+       * 用的是「此刻这一页上写着的字」＋一张离线词表，所以在没配模型 key
+       * 的规则引擎路径上同样生效——降级时能力不该跟着一起降。
+       * 修改必须让用户看得见（speechFixes 会显示在确认行下），不静默改话。
+       */
+      const normalized = normalizeUtterance(utterance, {
+        screenText: screenVocabulary(screenId),
+        dialect: session?.profile.dialect,
+      });
+      const heard = normalized.text || utterance;
+      setSpeechFixes(normalized.fixes);
       setBusy(true);
-      setTranscript(utterance);
+      setTranscript(heard);
       try {
         let sid = session?.sessionId;
         if (!sid) {
@@ -208,7 +229,7 @@ export function App() {
           setMemory(created.memory ?? null);
           sid = created.sessionId;
         }
-        const result = await api.interpret(sid, utterance);
+        const result = await api.interpret(sid, heard);
         if (result.mode === 'answer' && result.answer) {
           setAnswer(result.answer);
           setPlanNote(null);
@@ -246,7 +267,7 @@ export function App() {
         setBusy(false);
       }
     },
-    [session, guideWith, speakOn],
+    [session, guideWith, speakOn, screenId],
   );
 
   /** 直接打开某个管家抽屉（不走语音输入的那条路） */
@@ -561,7 +582,7 @@ export function App() {
 
   const startListening = useCallback(
     (onText: (text: string) => void) => {
-      const recognition = getRecognition();
+      const recognition = getRecognition(speechLangOf(session?.profile.dialect));
       if (!recognition) {
         /* 设备没有语音能力，别让老人对着屏幕发愣——直接给他能点的事 */
         setAskOpen(true);
@@ -603,7 +624,7 @@ export function App() {
       recognition.onend = () => setListening(false);
       recognition.start();
     },
-    [listening],
+    [listening, session],
   );
 
   const screen = useMemo(() => SCREENS[screenId], [screenId]);
@@ -797,6 +818,17 @@ export function App() {
                 这句话不对劲？
               </button>
             </div>
+            {speechFixes.length > 0 && (
+              /*
+               * 把「我把您的话改成了什么」摊开给用户看。
+               * 只写改了什么不够，还要写凭什么改：这一页上写着 / 这是方言词。
+               */
+              <p className="speech-fix-line">
+                我听成「{speechFixes.map((fix) => fix.from).join('」「')}」，按
+                {speechFixes.some((fix) => fix.via === 'screen') ? '这一页的写法' : '您的常用说法'}记作
+                「{speechFixes.map((fix) => fix.to).join('」「')}」
+              </p>
+            )}
             {intent && (
               <p className="intent-line">
                 已确认：<strong>{intent.restated}</strong>

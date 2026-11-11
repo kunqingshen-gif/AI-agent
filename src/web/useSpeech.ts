@@ -26,13 +26,16 @@ type RecognitionCtor = new () => SpeechRecognitionLike;
 /**
  * 语音能力封装：优先使用浏览器原生 Web Speech API，
  * 不支持时由调用方回退到文字输入（不阻断主流程）。
+ *
+ * lang 由档案里的常用方言决定：粤语用 zh-HK，其余用 zh-CN。
+ * 这是「方言容错」的第一层——先用对语言包听，再谈纠错。
  */
-export function getRecognition(): SpeechRecognitionLike | null {
+export function getRecognition(lang = 'zh-CN'): SpeechRecognitionLike | null {
   const w = window as unknown as { SpeechRecognition?: RecognitionCtor; webkitSpeechRecognition?: RecognitionCtor };
   const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
   if (!Ctor) return null;
   const recognition = new Ctor();
-  recognition.lang = 'zh-CN';
+  recognition.lang = lang;
   recognition.continuous = false;
   recognition.interimResults = true;
   return recognition;

@@ -4,12 +4,12 @@
  * ## 为什么需要这个
  *
  * 评委最怕听到的一句话是「这个在我电脑上是好的」。
- * 现有验证其实不弱（176 项单测 + 3 个真实坐标点击探针 + 冒烟链路），
+ * 现有验证其实不弱（233 项单测 + 六个真实坐标点击探针 + 冒烟链路），
  * 但要手工按顺序跑四条命令、还要先确认服务起没起——
  * 只要中间错一步，结论就不可信，而评委不会给你第二次机会。
  *
  * 这个脚本把「环境自检 → 类型 → lint → 单测 → 构建 → 起服务 → 冒烟 →
- * 三个探针 → 出报告」串成一条线，最后产出一份**自包含的 HTML**：
+ * 六个探针 → 出报告」串成一条线，最后产出一份**自包含的 HTML**：
  * 截图内联成 base64，单个文件发给任何人都能看，不需要配环境。
  *
  * 运行：npm run demo:check
@@ -327,6 +327,9 @@ async function main() {
     /* 这一步同时产出起手页/下一步/选题三张截图，不重复跑 */
     runProbe('探针 · 零学习成本', 'node scripts/probe-zero.mjs', { timeout: 420_000 });
     runProbe('探针 · 管家能力', 'node scripts/probe-guardian.mjs', { timeout: 300_000 });
+    runProbe('探针 · 多模态（方言归一 / 视觉可达性 / 同义说法）', 'node scripts/probe-multimodal.mjs', {
+      timeout: 420_000,
+    });
     run('截图 · Agent 视线', 'node scripts/shot-sight.mjs', { allowFail: true });
     runProbe('探针 · 结果反馈闭环', 'node scripts/shot-feedback.mjs', { timeout: 240_000 });
     /* 记忆必须跨会话验证：刷新后还记得才算数，同一次里点两下谁都能做到 */

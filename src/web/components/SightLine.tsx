@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * 把 Agent 的「视线」画在手机屏上。
@@ -40,6 +40,16 @@ interface Box {
 export function SightLine({ targetId, controlCount, silent = false }: Props) {
   const [box, setBox] = useState<Box | null>(null);
   const [tick, setTick] = useState(0);
+  /**
+   * 哪一次引导是「翻过屏才指到的」。
+   *
+   * 这是视觉可达性校验，不是动画：Agent 说「点这个」之前，先确认这个控件
+   * 真的落在用户此刻能看到的区域里。不在，就替他把屏翻过去，再指。
+   * 判据是渲染后的真实几何（getBoundingClientRect），不是屏幕模型里的假设——
+   * DOM 里有这个 id，不等于老人眼里有这个东西。
+   */
+  const [movedId, setMovedId] = useState<string | null>(null);
+  const autoMoved = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const measure = () => {
@@ -54,6 +64,25 @@ export function SightLine({ targetId, controlCount, silent = false }: Props) {
       if (!el) {
         setBox(null);
         return;
+      }
+      /*
+       * 视觉可达性：控件在 DOM 里，不等于在老人眼里。
+       *
+       * 滚动容器是 .app-body。目标若落在它的可视区之外（表单页最常见的坑：
+       * 模型指了「提交」，而提交按钮在屏幕下方两屏路），这里先替老人滚过去。
+       * 只滚一次、且每次目标只滚一次：反复纠正用户正在看的画面，比不滚更烦。
+       */
+      const scroller = root.querySelector<HTMLElement>('.app-body');
+      if (scroller && scroller.scrollHeight > scroller.clientHeight + 8) {
+        const view = scroller.getBoundingClientRect();
+        const first = el.getBoundingClientRect();
+        const outside = first.top < view.top - 6 || first.bottom > view.bottom + 6;
+        if (outside && !autoMoved.current.has(targetId)) {
+          autoMoved.current.add(targetId);
+          const delta = first.top - view.top - (view.height - first.height) / 2;
+          scroller.scrollTop += delta;
+          setMovedId(targetId);
+        }
       }
       const r = el.getBoundingClientRect();
       setBox({
@@ -134,6 +163,7 @@ export function SightLine({ targetId, controlCount, silent = false }: Props) {
    */
   return (
     <div className="sight" aria-hidden="true">
+      {movedId === targetId && <span className="sight-moved">翻到这一处才指给您</span>}
       <span className="sight-marker" style={{ top: cy }} />
       {/* 从屏幕边缘牵一条虚线到目标：让「看见」和「指到」在画面上是连续的 */}
       {room > 10 && (
