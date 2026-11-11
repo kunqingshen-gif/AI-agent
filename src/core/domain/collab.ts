@@ -77,9 +77,22 @@ export function isCollabExpired(ticket: CollabTicket, now: number = Date.now()):
   return now > ticket.expiresAt;
 }
 
+/**
+ * 还剩多久，毫秒；过期后返回 0（不返回负数）。
+ *
+ * 界面要把它念成一个具体的数——「还剩 9 分 12 秒」比「十分钟内有效」有用，
+ * 老人不需要自己算从生成到现在过了多久。
+ */
+export function collabRemainingMs(ticket: CollabTicket, now: number = Date.now()): number {
+  return Math.max(0, ticket.expiresAt - now);
+}
+
+/** 过期后统一用这一句：说清为什么不行，再给一条出路 */
+export const COLLAB_EXPIRED_REASON = '这个协办码过期了（生成后十分钟内有效）。请老人重新生成一个，再念给您。';
+
 export function joinCollab(ticket: CollabTicket, helper: string, now: number = Date.now()): CollabResult<CollabTicket> {
   if (ticket.status === 'closed') return { ok: false, reason: '这次协办已经结束了，需要重新生成一个码。' };
-  if (isCollabExpired(ticket, now)) return { ok: false, reason: '码过期了，10 分钟内有效。请让老人再生成一个。' };
+  if (isCollabExpired(ticket, now)) return { ok: false, reason: COLLAB_EXPIRED_REASON };
   if (ticket.status === 'joined') return { ok: true, value: ticket };
   return { ok: true, value: { ...ticket, status: 'joined', helper } };
 }
@@ -96,6 +109,8 @@ export function pushHint(ticket: CollabTicket, text: string, now: number = Date.
   if (clean.length > MAX_HINT_LENGTH) return { ok: false, reason: `一次最多 ${MAX_HINT_LENGTH} 个字，说短一点老人更好懂。` };
   if (ticket.status === 'waiting') return { ok: false, reason: '家人还没接入，先把码告诉他。' };
   if (ticket.status === 'closed') return { ok: false, reason: '这次协办已经结束了。' };
+  /* 过期后才想起发提示：以前只挡了「接入」，已接入的人可以一直发下去，时效形同虚设 */
+  if (isCollabExpired(ticket, now)) return { ok: false, reason: COLLAB_EXPIRED_REASON };
   if (ticket.hints.length >= MAX_HINTS) return { ok: false, reason: `一次最多 ${MAX_HINTS} 条提示，多了老人会乱。` };
 
   const last = ticket.hints[ticket.hints.length - 1];

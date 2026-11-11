@@ -2468,6 +2468,35 @@ input {
   color: var(--ink-3);
 }
 
+.collab-expiry {
+  margin: 12px 0;
+  padding: 11px 13px;
+  border-radius: 11px;
+  background: var(--warn-soft, #fdf4e3);
+  border: 1px solid #f0dcb4;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: flex-start;
+}
+
+.collab-expiry strong {
+  font-size: 13.5px;
+  color: #8a6418;
+}
+
+.collab-expiry span {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.hint-quota {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
 .collab-safety {
   margin: 12px 0;
   padding: 11px 13px;

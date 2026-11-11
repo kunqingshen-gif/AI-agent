@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { COLLAB_TTL_MS, MAX_HINTS, closeCollab, generateCollabCode, isCollabExpired, joinCollab, openCollab, pushHint } from '@core/domain/collab';
+import {
+  COLLAB_EXPIRED_REASON,
+  COLLAB_TTL_MS,
+  MAX_HINTS,
+  closeCollab,
+  collabRemainingMs,
+  generateCollabCode,
+  isCollabExpired,
+  joinCollab,
+  openCollab,
+  pushHint,
+} from '@core/domain/collab';
 
 /**
  * 协办码的契约：
@@ -51,7 +62,7 @@ describe('接入与过期', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toContain('过期');
-      expect(result.reason).toContain('再生成一个');
+      expect(result.reason).toContain('重新生成');
     }
   });
 
@@ -59,6 +70,22 @@ describe('接入与过期', () => {
     const closed = closeCollab(make());
     const result = joinCollab(closed, '女儿', NOW + 1000);
     expect(result.ok).toBe(false);
+  });
+
+  it('剩余时间可以念给用户听，过期后归零而不是变成负数', () => {
+    const ticket = make();
+    expect(collabRemainingMs(ticket, NOW)).toBe(COLLAB_TTL_MS);
+    expect(collabRemainingMs(ticket, NOW + COLLAB_TTL_MS - 4000)).toBe(4000);
+    expect(collabRemainingMs(ticket, NOW + COLLAB_TTL_MS + 60_000)).toBe(0);
+  });
+
+  it('过期提示说清原因并指向下一步，不是一句「失败」', () => {
+    const result = joinCollab(make(), '女儿', NOW + COLLAB_TTL_MS + 1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe(COLLAB_EXPIRED_REASON);
+      expect(result.reason).toContain('重新生成');
+    }
   });
 });
 
@@ -109,6 +136,14 @@ describe('家人的提示', () => {
     const twice = pushHint(once.value, '别急，慢慢来', NOW + 3000);
     expect(twice.ok).toBe(true);
     if (twice.ok) expect(twice.value.hints).toHaveLength(1);
+  });
+
+  it('接入后过期，家人也发不出提示——时效不能只在接入那一刻生效', () => {
+    const joined = joinCollab(make(), '女儿', NOW + 1000);
+    if (!joined.ok) throw new Error('应当接入成功');
+    const late = pushHint(joined.value, '点右上角的返回', NOW + COLLAB_TTL_MS + 1);
+    expect(late.ok).toBe(false);
+    if (!late.ok) expect(late.reason).toBe(COLLAB_EXPIRED_REASON);
   });
 
   it('提示里没有可执行字段——家人无法代按', () => {

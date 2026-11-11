@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ScreenId, TaskId } from '@shared/types';
 import type { ToolPayload } from '@core/domain/tools';
 import type { CollabTicket } from '@core/domain/collab';
+import { COLLAB_TTL_MS, MAX_HINTS, collabRemainingMs, isCollabExpired } from '@core/domain/collab';
 import { api } from '../client';
 
 /**
@@ -316,10 +317,36 @@ function ScamEntry({ onResult, onToast }: { onResult: (payload: ToolPayload) => 
 
 const PRESET_HINTS = ['点右上角的返回', '先别点提交，等我看看', '户口簿那格还空着'];
 
+/** 把毫秒念成人话：老人不需要自己算「生成到现在过了多久」 */
+function formatRemaining(ms: number): string {
+  const total = Math.ceil(ms / 1000);
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return minutes > 0 ? `${minutes} 分 ${String(seconds).padStart(2, '0')} 秒` : `${seconds} 秒`;
+}
+
 function CollabBody({ ticket, onSync, onToast }: { ticket: CollabTicket; onSync: (ticket: CollabTicket) => void; onToast: (text: string) => void }) {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const joined = ticket.status === 'joined';
+  const closed = ticket.status === 'closed';
+
+  /*
+   * 每秒重算一次剩余时间。
+   * 只依赖 closed：票根没换就不重启定时器，换码后由新的 ticket 重新挂载。
+   */
+  useEffect(() => {
+    if (closed) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [closed, ticket.code]);
+
+  const expired = !closed && isCollabExpired(ticket, now);
+  const remaining = collabRemainingMs(ticket, now);
+  const hintsLeft = Math.max(0, MAX_HINTS - ticket.hints.length);
+  const canHint = joined && !expired && hintsLeft > 0;
 
   const run = async (task: () => Promise<CollabTicket>) => {
     setBusy(true);
@@ -341,7 +368,29 @@ function CollabBody({ ticket, onSync, onToast }: { ticket: CollabTicket; onSync:
           </span>
         ))}
       </div>
-      <p className="collab-note">十分钟内有效。把这个码念给家人，他在自己手机上输入，就能看到您这一屏。</p>
+      <p className="collab-note">
+        {closed
+          ? '这次协办已经结束。需要时重新生成一个码。'
+          : expired
+            ? `这个码已经过期了（生成后 ${COLLAB_TTL_MS / 60000} 分钟内有效）。`
+            : `还剩 ${formatRemaining(remaining)} 有效。`}
+        {!closed && !expired && '把这个码念给家人，他在自己手机上输入，就能看到您这一屏。'}
+      </p>
+
+      {expired && (
+        <div className="collab-expiry" role="status">
+          <strong>家人现在接不进来了</strong>
+          <span>过期后接入和发言都会被拒绝。重新生成一个码，再念给家人。</span>
+          <button
+            className="btn-soft btn-soft-accent"
+            type="button"
+            disabled={busy}
+            onClick={() => void run(() => api.collabOpen(ticket.sessionId))}
+          >
+            重新生成一个码
+          </button>
+        </div>
+      )}
 
       <div className="collab-safety">
         <strong>他看得到，但按不了。</strong>
@@ -357,7 +406,7 @@ function CollabBody({ ticket, onSync, onToast }: { ticket: CollabTicket; onSync:
         <button
           className="btn-soft btn-soft-accent"
           type="button"
-          disabled={busy}
+          disabled={busy || expired}
           onClick={() => void run(() => api.collabJoin(ticket.code, '女儿'))}
         >
           模拟女儿接入（演示用）
@@ -366,14 +415,17 @@ function CollabBody({ ticket, onSync, onToast }: { ticket: CollabTicket; onSync:
 
       {joined && (
         <>
-          <p className="scam-label">{ticket.helper ?? '家人'}可以说一句话，会出现在您的手机屏幕上：</p>
+          <p className="scam-label">
+            {ticket.helper ?? '家人'}可以说一句话，会出现在您的手机屏幕上：
+            <span className="hint-quota">还能发 {hintsLeft} 条（一次最多 {MAX_HINTS} 条）</span>
+          </p>
           <div className="hint-presets">
             {PRESET_HINTS.map((hint) => (
               <button
                 key={hint}
                 className="chip"
                 type="button"
-                disabled={busy}
+                disabled={busy || !canHint}
                 onClick={() => {
                   void run(() => api.collabHint(ticket.code, hint));
                   onToast('已经发到老人手机上');
@@ -384,11 +436,16 @@ function CollabBody({ ticket, onSync, onToast }: { ticket: CollabTicket; onSync:
             ))}
           </div>
           <div className="hint-input">
-            <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="或者自己写一句，最多 40 字" />
+            <input
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder={canHint ? '或者自己写一句，最多 40 字' : '这次协办不能再发了'}
+              disabled={!canHint}
+            />
             <button
               className="btn-soft"
               type="button"
-              disabled={busy}
+              disabled={busy || !canHint}
               onClick={() => {
                 void run(() => api.collabHint(ticket.code, draft));
                 setDraft('');
